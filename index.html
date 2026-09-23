@@ -3,108 +3,59 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>DJCIOKOSTUDIO</title>
+<title>DJCIOKOSTUDIO - ON AIR</title>
 <style>
 :root{--bg:#071018;--panel:#0d1822;--blue:#7ecbff;--blue2:#b9e4ff;--red:#c1392b;--text:#eaf6ff;--muted:#9bb6c9;--line:#1c3344}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:Georgia,serif}
 button,input{font-family:inherit}
-.app{max-width:430px;margin:0 auto;min-height:100%;background:linear-gradient(#0b1a24,#071018)}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
-.logo{letter-spacing:.16em;font-size:12px;color:var(--blue2);font-weight:bold}
-.live-badge{background:#c1392b;color:#fff;font-size:10px;padding:3px 8px;border-radius:20px;font-weight:bold;letter-spacing:.1em;display:none}
+.app{max-width:430px;margin:0 auto;min-height:100%;background:linear-gradient(#0b1a24,#071018);display:flex;flex-direction:column;justify-content:space-between;padding-bottom:20px}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line)}
+.logo{letter-spacing:.16em;font-size:13px;color:var(--blue2);font-weight:bold}
+.live-badge{background:#c1392b;color:#fff;font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;letter-spacing:.1em;display:none}
 .live-badge.active{display:inline-block;animation:pulse 1.5s infinite}
 @keyframes pulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}
-.screen{display:none;padding:8px 10px 78px}
-.screen.active{display:block}
-h1,h2{font-weight:500;color:var(--blue2)}
-h1{font-size:20px;margin:6px 0}h2{font-size:15px;margin:8px 0}
-.muted{color:var(--muted);font-size:12px;line-height:1.35}
-.hero{width:100%;height:190px;object-fit:cover;border-radius:12px;border:1px solid #2a5570;margin:8px 0;background:#10202a;filter:brightness(1.12)}
-.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid #5aa0d0;background:linear-gradient(#3a7eb0,#1d4e73);color:#eaf6ff;padding:8px 10px;border-radius:10px;cursor:pointer}
-.btn.primary,.btn.full{width:100%}
-.btn.primary{margin-top:8px;background:linear-gradient(#4aa0d8,#21608f)}
-.btn.danger{border-color:#7a2a22;color:#f3c2bc;background:linear-gradient(#5a2a28,#2a1514)}
-.btn.green{border-color:#2d6a3c;color:#b6f0c6}
-.btn.on{outline:2px solid #7ecbff}
-.row{display:flex;gap:8px}.row .btn{flex:1}
-.field{margin:8px 0}
-.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-.field input{width:100%;background:#071018;border:1px solid #2a5570;color:var(--text);padding:10px;border-radius:8px}
-.seats{display:grid;grid-template-columns:repeat(15,1fr);gap:3px;background:#071018;padding:10px;border-radius:12px;border:1px solid var(--line);margin-top:8px}
-.seat{aspect-ratio:1;border-radius:3px;background:#1f7a45;cursor:pointer;border:0}
-.seat.ocupat{background:#c1392b}.seat.me{outline:2px solid #7ecbff}
-.legend{display:flex;gap:12px;font-size:12px;color:var(--muted);margin:8px 0}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px}
-.dot.g{background:#1f7a45}.dot.r{background:#c1392b}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
-.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:70vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none}
+.main-content{padding:10px;flex:1;display:flex;flex-direction:column}
+h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-align:center}
+.muted{color:var(--muted);font-size:12px;text-align:center;margin-bottom:10px}
+.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:65vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none;margin:0 auto}
 .studio canvas,.studio video.raw{width:100%;height:100%;object-fit:cover}
 .studio video.raw{position:absolute;opacity:0;pointer-events:none}
-.timer{position:absolute;left:0;right:0;top:8px;text-align:center;color:#fff;font-size:13px;pointer-events:none}
-.tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
-.tools .btn{font-size:11px;padding:7px}
-.rec-row{display:flex;justify-content:center;margin-top:6px}
+.timer{position:absolute;left:0;right:0;top:8px;text-align:center;color:#fff;font-size:13px;pointer-events:none;text-shadow:0 2px 4px rgba(0,0,0,0.8)}
+.tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid #5aa0d0;background:linear-gradient(#3a7eb0,#1d4e73);color:#eaf6ff;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:11px}
+.btn.primary{background:linear-gradient(#4aa0d8,#21608f)}
+.btn.on{outline:2px solid #7ecbff}
+.rec-row{display:flex;justify-content:center;margin-top:10px}
 .rec-btn{width:56px;height:56px;border-radius:50%;border:4px solid #fff;background:#c1392b;cursor:pointer}
 .rec-btn.rec{background:#fff;border-color:#c1392b;border-radius:14px;width:34px;height:34px}
-.nav{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:430px;display:grid;grid-template-columns:repeat(4,1fr);background:#071018ee;border-top:1px solid var(--line)}
-.nav button{background:none;border:0;color:var(--muted);padding:10px 4px 14px;font-size:11px}
-.nav button.active{color:var(--blue2)}
-.toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);background:#123044;color:#b9e4ff;padding:8px 14px;border-radius:20px;font-size:13px;display:none;z-index:9}
-.chip{font-size:11px;border:1px solid #2a5570;border-radius:99px;padding:3px 8px;color:var(--blue)}
-.warn{font-size:11px;color:#9bb6c9;margin-top:8px}
-video.preview{width:100%;border-radius:12px;background:#000;max-height:360px}
-.mapwrap{position:relative;border-radius:12px;overflow:hidden;border:1px solid #2a5570}
-.mapwrap img{width:100%;display:block;filter:brightness(1.2) contrast(1.04)}
-.mapwrap canvas{position:absolute;inset:0;width:100%;height:100%}
+.field{margin:8px 0}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+.field input{width:100%;background:#071018;border:1px solid #2a5570;color:var(--text);padding:8px;border-radius:8px;font-size:12px}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#123044;color:#b9e4ff;padding:8px 14px;border-radius:20px;font-size:12px;display:none;z-index:9;border:1px solid #7ecbff}
 </style>
 </head>
 <body>
 <div class="app">
 <header class="topbar">
   <div class="logo">DJCIOKOSTUDIO</div>
-  <div>
-    <span class="live-badge" id="topLiveBadge">ON AIR LIVE ACUM</span>
-    <span class="chip" id="userChip">vizitator</span>
-  </div>
+  <span class="live-badge" id="topLiveBadge">ON AIR LIVE</span>
 </header>
 
-<!-- ACASA -->
-<section id="home" class="screen active">
-  <h1>LIVE CONSULTANTA ONLINE CU DJCIOKO</h1>
-  <p class="muted">Intră acum și cere informații dacă este ON AIR (Max 3 minute).</p>
-  <div class="card" style="text-align:center; padding:12px;">
-    <span id="statusText" style="font-weight:bold; color:#c1392b; font-size:14px;">🔴 LIVE OFF</span>
-  </div>
-  <button class="btn primary" data-go="seats">300 de locuri</button>
-  <button class="btn full" data-go="studio" style="margin-top:8px;">CHAT ROOM LIVE</button>
-</section>
+<div class="main-content">
+  <h1>LIVE CONSULTANTA ONLINE</h1>
+  <p class="muted">Transmițător direct VDO Style (Max 3 minute / Sesiune)</p>
 
-<!-- 300 LOCURI -->
-<section id="seats" class="screen">
-  <h2>300 de locuri</h2>
-  <p class="muted">Rezervă-ți locul pentru a asculta transmisiunea.</p>
-  <div class="mapwrap"><img id="seatBg" alt="sală"/><canvas id="seatDots"></canvas></div>
-  <div class="legend"><span><i class="dot g"></i>liber</span><span><i class="dot r"></i>înscris</span></div>
-  <div class="seats" id="seatGrid"></div>
-  <div class="card" id="reserveBox" style="display:none">
-    <h2>Rezervi locul <span id="selSeat"></span></h2>
-    <div class="field"><label>Nume</label><input id="nume"/></div>
-    <div class="field"><label>Oraș</label><input id="oras"/></div>
-    <button class="btn primary" id="btnReserve">Rezervă locul</button>
-  </div>
-</section>
-
-<!-- CHAT ROOM LIVE (STUDIO) -->
-<section id="studio" class="screen">
-  <h2>CHAT ROOM LIVE</h2>
   <div class="studio" id="stageBox">
-    <video id="cam" class="raw" playsinline muted></video>
+    <video id="cam" class="raw" autoplay playsinline muted></video>
     <video id="bgVideoElem" class="raw" playsinline loop muted style="display:none;"></video>
     <canvas id="stage"></canvas>
     <div class="timer" id="recTimer">00:00 / 03:00</div>
   </div>
-  <div class="rec-row"><button class="rec-btn" id="recBtn" title="Pornire/Oprire Transmisie ON AIR"></button></div>
+
+  <div class="rec-row">
+    <button class="rec-btn" id="recBtn" title="Pornire/Oprire Transmisie ON AIR"></button>
+  </div>
   
   <div class="tools" id="tools">
     <button class="btn on" id="btnMic">🎙 Audio ON</button>
@@ -116,46 +67,20 @@ video.preview{width:100%;border-radius:12px;background:#000;max-height:360px}
     <button class="btn" id="btnUploadMask">🎭 Upload Mască PNG</button>
   </div>
 
-  <div class="field" style="margin-top:10px;"><label>Logo pe ecran</label>
+  <div class="field">
+    <label>Logo pe ecran / Brand</label>
     <input id="logoText" maxlength="28" placeholder="DJCIOKOSTUDIO"/>
   </div>
-  <input type="file" id="fileBg" accept="image/*" hidden/>
-  <input type="file" id="fileBgVideo" accept="video/*" hidden/>
-  <input type="file" id="fileMask" accept="image/*" hidden/>
-</section>
+</div>
 
-<!-- CLIPURI -->
-<section id="feed" class="screen">
-  <h2>Clipuri / Înregistrări</h2>
-  <div id="feedList"><p class="muted">Nu există înregistrări salvate.</p></div>
-</section>
-
-<!-- NAVIGARE -->
-<nav class="nav">
-  <button data-go="home" class="active">Acasă</button>
-  <button data-go="seats">Locuri</button>
-  <button data-go="studio">Chat Room</button>
-  <button data-go="feed">Clipuri</button>
-</nav>
+<input type="file" id="fileBg" accept="image/*" hidden/>
+<input type="file" id="fileBgVideo" accept="video/*" hidden/>
+<input type="file" id="fileMask" accept="image/*" hidden/>
 <div class="toast" id="toast"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
 <script>
-// Navigare simplă între ecrane
-document.querySelectorAll('.nav button, [data-go]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    const target = btn.getAttribute('data-go') || btn.dataset.go;
-    if(!target) return;
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(target).classList.add('active');
-    document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
-    const navBtn = document.querySelector(`.nav button[data-go="${target}"]`);
-    if(navBtn) navBtn.classList.add('active');
-  });
-});
-
-// Toast mesaje
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -163,68 +88,168 @@ function showToast(msg) {
   setTimeout(() => t.style.display = 'none', 3000);
 }
 
-// Salvare automată setări logo și stare
 document.addEventListener('DOMContentLoaded', () => {
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  
+  let localStream = null;
+  let audioEnabled = true;
+  let videoEnabled = true;
+  let aiCutEnabled = false;
+  
+  window.customBgImage = null;
+  window.customBgVideo = null;
+  window.customMaskImage = null;
+
+  // Setări Logo salvate
   const savedLogo = localStorage.getItem('dj_logo');
   if(savedLogo) document.getElementById('logoText').value = savedLogo;
-
   document.getElementById('logoText').addEventListener('input', (e) => {
     localStorage.setItem('dj_logo', e.target.value);
   });
 
-  // Generator Random Party Background
+  // Pornire Cameră & Microfon (Asigură vizibilitatea ta directă)
+  async function initCamera() {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 720 }, height: { ideal: 1280 }, facingMode: "user" },
+        audio: true
+      });
+      video.srcObject = localStream;
+      await video.play();
+      requestAnimationFrame(renderFrame);
+      showToast("Cameră și microfon pornite cu succes!");
+    } catch(err) {
+      console.error(err);
+      showToast("Erore acces cameră/microfon. Verifică permisiunile.");
+    }
+  }
+  initCamera();
+
+  // Bucla de Randare pe Canvas (Te vezi tot timpul clar)
+  function renderFrame() {
+    if (video.readyState >= video.HAVE_CURRENT_DATA) {
+      if(canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth || 720;
+        canvas.height = video.videoHeight || 1280;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Fundal (Video, Imagine custom, Random sau Negru)
+      if (window.customBgVideo && window.customBgVideo.readyState >= window.customBgVideo.HAVE_CURRENT_DATA) {
+        ctx.drawImage(window.customBgVideo, 0, 0, canvas.width, canvas.height);
+      } else if (window.customBgImage) {
+        ctx.drawImage(window.customBgImage, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = '#071018';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // 2. Transmisie Video Proprie
+      if (videoEnabled) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+
+      // 3. Mască PNG pe față (dacă este încărcată)
+      if (window.customMaskImage) {
+        // Poziționare estimativă în centrul sus (zona feței)
+        const mw = canvas.width * 0.4;
+        const mh = mw * (window.customMaskImage.height / window.customMaskImage.width);
+        const mx = (canvas.width - mw) / 2;
+        const my = canvas.height * 0.25;
+        ctx.drawImage(window.customMaskImage, mx, my, mw, mh);
+      }
+
+      // 4. Afișare Text / Logo Brand pe ecran
+      const logoVal = document.getElementById('logoText').value || "DJCIOKOSTUDIO";
+      ctx.save();
+      ctx.font = "bold 24px Georgia";
+      ctx.fillStyle = "#b9e4ff";
+      ctx.shadowColor = "#000";
+      ctx.shadowBlur = 10;
+      ctx.textAlign = "right";
+      ctx.fillText(logoVal, canvas.width - 25, 45);
+      ctx.restore();
+    }
+    requestAnimationFrame(renderFrame);
+  }
+
+  // Buton Audio ON/OFF
+  const btnMic = document.getElementById('btnMic');
+  btnMic.addEventListener('click', () => {
+    if(!localStream) return;
+    audioEnabled = !audioEnabled;
+    localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
+    btnMic.textContent = audioEnabled ? "🎙 Audio ON" : "🔇 Audio OFF";
+    btnMic.classList.toggle('on', audioEnabled);
+    showToast(audioEnabled ? "Microfon activat" : "Microfon dezactivat");
+  });
+
+  // Buton Video ON/OFF
+  const btnVideoToggle = document.getElementById('btnVideoToggle');
+  btnVideoToggle.addEventListener('click', () => {
+    if(!localStream) return;
+    videoEnabled = !videoEnabled;
+    localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
+    btnVideoToggle.textContent = videoEnabled ? "📹 Video ON" : "📴 Video OFF";
+    btnVideoToggle.classList.toggle('on', videoEnabled);
+    showToast(videoEnabled ? "Video activat" : "Video oprit");
+  });
+
+  // Fundal Random Generator
   document.getElementById('btnRandomBg').addEventListener('click', () => {
-    window.customBgVideo = null; // Reset video dacă era activ
+    window.customBgVideo = null;
     const colors = ['#ff0055', '#00f0ff', '#7928ca', '#ffb800', '#28ca42'];
     const c1 = colors[Math.floor(Math.random() * colors.length)];
     const c2 = colors[Math.floor(Math.random() * colors.length)];
     const canvasBg = document.createElement('canvas');
     canvasBg.width = 800; canvasBg.height = 1200;
-    const ctx = canvasBg.getContext('2d');
-    ctx.fillStyle = '#071018'; ctx.fillRect(0,0,800,1200);
-    const grad = ctx.createRadialGradient(400, 300, 50, 400, 300, 400);
+    const cCtx = canvasBg.getContext('2d');
+    cCtx.fillStyle = '#071018'; cCtx.fillRect(0,0,800,1200);
+    const grad = cCtx.createRadialGradient(400, 300, 50, 400, 300, 400);
     grad.addColorStop(0, c1); grad.addColorStop(1, c2);
-    ctx.fillStyle = grad; ctx.fillRect(0,0,800,1200);
+    cCtx.fillStyle = grad; cCtx.fillRect(0,0,800,1200);
     
     window.customBgImage = new Image();
     window.customBgImage.src = canvasBg.toDataURL();
-    showToast("Fundal random de petrecere generat!");
+    showToast("Fundal random generat!");
   });
 
-  // Upload Background Foto
+  // Upload Fundal Foto
   const fileBg = document.getElementById('fileBg');
   document.getElementById('btnUploadBg').addEventListener('click', () => fileBg.click());
   fileBg.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if(file) {
-      window.customBgVideo = null; // Oprește fundalul video anterior
+      window.customBgVideo = null;
       const reader = new FileReader();
       reader.onload = (evt) => {
         window.customBgImage = new Image();
         window.customBgImage.src = evt.target.result;
-        showToast("Fundal foto personalizat încărcat!");
+        showToast("Fundal foto încărcat!");
       };
       reader.readAsDataURL(file);
     }
   });
 
-  // Upload Background Video
+  // Upload Fundal Video
   const fileBgVideo = document.getElementById('fileBgVideo');
   const bgVideoElem = document.getElementById('bgVideoElem');
   document.getElementById('btnUploadBgVideo').addEventListener('click', () => fileBgVideo.click());
   fileBgVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if(file) {
-      window.customBgImage = null; // Resetează imaginea statică
-      const videoUrl = URL.createObjectURL(file);
-      bgVideoElem.src = videoUrl;
+      window.customBgImage = null;
+      bgVideoElem.src = URL.createObjectURL(file);
       bgVideoElem.play();
       window.customBgVideo = bgVideoElem;
-      showToast("Fundal video încărcat și redat în buclă!");
+      showToast("Fundal video activat în buclă!");
     }
   });
 
-  // Upload Mască PNG fixată pe față
+  // Upload Mască PNG
   const fileMask = document.getElementById('fileMask');
   document.getElementById('btnUploadMask').addEventListener('click', () => fileMask.click());
   fileMask.addEventListener('change', (e) => {
@@ -234,30 +259,25 @@ document.addEventListener('DOMContentLoaded', () => {
       reader.onload = (evt) => {
         window.customMaskImage = new Image();
         window.customMaskImage.src = evt.target.result;
-        showToast("Mască PNG încărcată pentru fixare pe față!");
+        showToast("Mască PNG încărcată!");
       };
       reader.readAsDataURL(file);
     }
   });
 
-  // Simulare comutare ON AIR din butonul de înregistrare/emisie
+  // Buton ON AIR (Transmitere)
   let isOnAir = false;
   const recBtn = document.getElementById('recBtn');
-  const statusText = document.getElementById('statusText');
   const topLiveBadge = document.getElementById('topLiveBadge');
 
   recBtn.addEventListener('click', () => {
     isOnAir = !isOnAir;
     if(isOnAir) {
       recBtn.classList.add('rec');
-      statusText.innerHTML = "🔴 ON AIR LIVE ACUM DJ CIOKO";
-      statusText.style.color = "#28ca42";
       topLiveBadge.classList.add('active');
-      showToast("Transmisie ON AIR pornită!");
+      showToast("Transmisie ON AIR pornită pe site!");
     } else {
       recBtn.classList.remove('rec');
-      statusText.innerHTML = "⚪ LIVE OFF";
-      statusText.style.color = "#c1392b";
       topLiveBadge.classList.remove('active');
       showToast("Transmisie oprită.");
     }
