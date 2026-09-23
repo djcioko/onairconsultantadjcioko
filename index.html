@@ -18,14 +18,13 @@ button,input{font-family:inherit}
 .main-content{padding:10px;flex:1;display:flex;flex-direction:column}
 h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-align:center}
 .muted{color:var(--muted);font-size:12px;text-align:center;margin-bottom:10px}
-.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:65vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none;margin:0 auto}
+.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:60vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none;margin:0 auto}
 .studio canvas,.studio video.raw{width:100%;height:100%;object-fit:cover}
 .studio video.raw{position:absolute;opacity:0;pointer-events:none}
-.timer{position:absolute;left:0;right:0;top:8px;text-align:center;color:#fff;font-size:13px;pointer-events:none;text-shadow:0 2px 4px rgba(0,0,0,0.8)}
 .tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
 .btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid #5aa0d0;background:linear-gradient(#3a7eb0,#1d4e73);color:#eaf6ff;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:11px}
 .btn.primary{background:linear-gradient(#4aa0d8,#21608f)}
-.btn.on{outline:2px solid #7ecbff}
+.btn.on{outline:2px solid #7ecbff;border-color:#b9e4ff}
 .rec-row{display:flex;justify-content:center;margin-top:10px}
 .rec-btn{width:56px;height:56px;border-radius:50%;border:4px solid #fff;background:#c1392b;cursor:pointer}
 .rec-btn.rec{background:#fff;border-color:#c1392b;border-radius:14px;width:34px;height:34px}
@@ -43,14 +42,13 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
 </header>
 
 <div class="main-content">
-  <h1>LIVE CONSULTANTA ONLINE</h1>
-  <p class="muted">Transmițător direct VDO Style (Max 3 minute / Sesiune)</p>
+  <h1>TRANSMISIUNE VDO NINJA STYLE</h1>
+  <p class="muted">AI Cut, Fundaluri Video/Foto & Scalare Liberă</p>
 
   <div class="studio" id="stageBox">
     <video id="cam" class="raw" autoplay playsinline muted></video>
     <video id="bgVideoElem" class="raw" playsinline loop muted style="display:none;"></video>
     <canvas id="stage"></canvas>
-    <div class="timer" id="recTimer">00:00 / 03:00</div>
   </div>
 
   <div class="rec-row">
@@ -60,11 +58,12 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
   <div class="tools" id="tools">
     <button class="btn on" id="btnMic">🎙 Audio ON</button>
     <button class="btn on" id="btnVideoToggle">📹 Video ON</button>
-    <button class="btn" id="btnBg">AI Cut OFF</button>
+    <button class="btn" id="btnAiCut">✂️ AI Cut OFF</button>
     <button class="btn" id="btnRandomBg">🎲 Fundal Random</button>
     <button class="btn" id="btnUploadBg">📁 Upload Fundal Foto</button>
     <button class="btn" id="btnUploadBgVideo">🎥 Upload Fundal Video</button>
     <button class="btn" id="btnUploadMask">🎭 Upload Mască PNG</button>
+    <button class="btn" id="btnScaleToggle">📐 Scalare: Fit</button>
   </div>
 
   <div class="field">
@@ -79,7 +78,10 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
 <div class="toast" id="toast"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+<!-- MediaPipe pentru AI Cut / Decupare Fundal -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
 <script>
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -96,7 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let localStream = null;
   let audioEnabled = true;
   let videoEnabled = true;
-  let aiCutEnabled = false;
+  let aiCutActive = false;
+  let scaleMode = 'cover'; // 'cover' sau 'contain' (scalare liberă)
   
   window.customBgImage = null;
   window.customBgVideo = null;
@@ -109,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('dj_logo', e.target.value);
   });
 
-  // Pornire Cameră & Microfon (Asigură vizibilitatea ta directă)
+  // Inițializare Cameră & Microfon
   async function initCamera() {
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -118,63 +121,136 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       video.srcObject = localStream;
       await video.play();
-      requestAnimationFrame(renderFrame);
       showToast("Cameră și microfon pornite cu succes!");
     } catch(err) {
       console.error(err);
-      showToast("Erore acces cameră/microfon. Verifică permisiunile.");
+      showToast("Erore acces cameră. Verifică permisiunile.");
     }
   }
   initCamera();
 
-  // Bucla de Randare pe Canvas (Te vezi tot timpul clar)
-  function renderFrame() {
+  // Configurare MediaPipe Selfie Segmentation pentru AI Cut
+  const selfieSegmentation = new SelfieSegmentation({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+  });
+  selfieSegmentation.setOptions({ modelSelection: 1 });
+
+  selfieSegmentation.onResults((results) => {
+    if (!aiCutActive) return;
+    drawCanvasWithSegmentation(results.segmentationMask);
+  });
+
+  // Bucla principală de randare
+  function processFrame() {
     if (video.readyState >= video.HAVE_CURRENT_DATA) {
       if(canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
         canvas.width = video.videoWidth || 720;
         canvas.height = video.videoHeight || 1280;
       }
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 1. Fundal (Video, Imagine custom, Random sau Negru)
-      if (window.customBgVideo && window.customBgVideo.readyState >= window.customBgVideo.HAVE_CURRENT_DATA) {
-        ctx.drawImage(window.customBgVideo, 0, 0, canvas.width, canvas.height);
-      } else if (window.customBgImage) {
-        ctx.drawImage(window.customBgImage, 0, 0, canvas.width, canvas.height);
+      if (aiCutActive) {
+        selfieSegmentation.send({ image: video });
       } else {
-        ctx.fillStyle = '#071018';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawStandardFrame();
       }
-
-      // 2. Transmisie Video Proprie
-      if (videoEnabled) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
-
-      // 3. Mască PNG pe față (dacă este încărcată)
-      if (window.customMaskImage) {
-        // Poziționare estimativă în centrul sus (zona feței)
-        const mw = canvas.width * 0.4;
-        const mh = mw * (window.customMaskImage.height / window.customMaskImage.width);
-        const mx = (canvas.width - mw) / 2;
-        const my = canvas.height * 0.25;
-        ctx.drawImage(window.customMaskImage, mx, my, mw, mh);
-      }
-
-      // 4. Afișare Text / Logo Brand pe ecran
-      const logoVal = document.getElementById('logoText').value || "DJCIOKOSTUDIO";
-      ctx.save();
-      ctx.font = "bold 24px Georgia";
-      ctx.fillStyle = "#b9e4ff";
-      ctx.shadowColor = "#000";
-      ctx.shadowBlur = 10;
-      ctx.textAlign = "right";
-      ctx.fillText(logoVal, canvas.width - 25, 45);
-      ctx.restore();
     }
-    requestAnimationFrame(renderFrame);
+    requestAnimationFrame(processFrame);
   }
+  requestAnimationFrame(processFrame);
+
+  // Randare Normală (fără AI Cut)
+  function drawStandardFrame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
+
+    if (videoEnabled) {
+      drawImageScaled(video, canvas, scaleMode);
+    }
+
+    drawMaskAndLogo();
+  }
+
+  // Randare cu AI Cut (Decupare siluetă personaj)
+  function drawCanvasWithSegmentation(mask) {
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 1. Desenează mai întâi fundalul ales
+    drawBackground();
+
+    // 2. Aplică masca AI pentru a tăia doar personajul
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
+
+    // 3. Desenează video-ul tău doar în zona decupată de mască
+    ctx.globalCompositeOperation = 'source-in';
+    if (videoEnabled) {
+      drawImageScaled(video, canvas, scaleMode);
+    }
+
+    ctx.restore();
+    drawMaskAndLogo();
+  }
+
+  // Desenare fundal (Video, Imagine sau Negru curat)
+  function drawBackground() {
+    if (window.customBgVideo && window.customBgVideo.readyState >= window.customBgVideo.HAVE_CURRENT_DATA) {
+      ctx.drawImage(window.customBgVideo, 0, 0, canvas.width, canvas.height);
+    } else if (window.customBgImage) {
+      ctx.drawImage(window.customBgImage, 0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.fillStyle = '#071018';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  // Scalare liberă (Cover vs Contain)
+  function drawImageScaled(img, canvas, mode) {
+    let hRatio = canvas.width / img.videoWidth;
+    let vRatio = canvas.height / img.videoHeight;
+    let ratio = mode === 'cover' ? Math.max(hRatio, vRatio) : Math.min(hRatio, vRatio);
+    let centerShiftX = (canvas.width - img.videoWidth * ratio) / 2;
+    let centerShiftY = (canvas.height - img.videoHeight * ratio) / 2;
+    ctx.drawImage(img, 0, 0, img.videoWidth, img.videoHeight, centerShiftX, centerShiftY, img.videoWidth * ratio, img.videoHeight * ratio);
+  }
+
+  // Elemente suplimentare (Mască fixă pe față și Logo text)
+  function drawMaskAndLogo() {
+    if (window.customMaskImage) {
+      const mw = canvas.width * 0.4;
+      const mh = mw * (window.customMaskImage.height / window.customMaskImage.width);
+      const mx = (canvas.width - mw) / 2;
+      const my = canvas.height * 0.25;
+      ctx.drawImage(window.customMaskImage, mx, my, mw, mh);
+    }
+
+    const logoVal = document.getElementById('logoText').value || "DJCIOKOSTUDIO";
+    ctx.save();
+    ctx.font = "bold 24px Georgia";
+    ctx.fillStyle = "#b9e4ff";
+    ctx.shadowColor = "#000";
+    ctx.shadowBlur = 10;
+    ctx.textAlign = "right";
+    ctx.fillText(logoVal, canvas.width - 25, 45);
+    ctx.restore();
+  }
+
+  // Buton AI Cut ON/OFF
+  const btnAiCut = document.getElementById('btnAiCut');
+  btnAiCut.addEventListener('click', () => {
+    aiCutActive = !aiCutActive;
+    btnAiCut.textContent = aiCutActive ? "✂️ AI Cut ON" : "✂️ AI Cut OFF";
+    btnAiCut.classList.toggle('on', aiCutActive);
+    showToast(aiCutActive ? "AI Cut activat (Decupare fundal)" : "AI Cut dezactivat");
+  });
+
+  // Buton Scalare Liberă (Cover / Contain)
+  const btnScaleToggle = document.getElementById('btnScaleToggle');
+  btnScaleToggle.addEventListener('click', () => {
+    scaleMode = scaleMode === 'cover' ? 'contain' : 'cover';
+    btnScaleToggle.textContent = scaleMode === 'cover' ? "📐 Scalare: Cover" : "📐 Scalare: Contain";
+    showToast(`Mod scalare setat pe: ${scaleMode}`);
+  });
 
   // Buton Audio ON/OFF
   const btnMic = document.getElementById('btnMic');
@@ -214,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.customBgImage = new Image();
     window.customBgImage.src = canvasBg.toDataURL();
-    showToast("Fundal random generat!");
+    showToast("Fundal random generat cu succes!");
   });
 
   // Upload Fundal Foto
@@ -275,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(isOnAir) {
       recBtn.classList.add('rec');
       topLiveBadge.classList.add('active');
-      showToast("Transmisie ON AIR pornită pe site!");
+      showToast("Transmisie ON AIR pornită!");
     } else {
       recBtn.classList.remove('rec');
       topLiveBadge.classList.remove('active');
