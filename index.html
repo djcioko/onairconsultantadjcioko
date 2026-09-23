@@ -18,7 +18,7 @@ button,input{font-family:inherit}
 .main-content{padding:10px;flex:1;display:flex;flex-direction:column}
 h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-align:center}
 .muted{color:var(--muted);font-size:12px;text-align:center;margin-bottom:10px}
-.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:60vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none;margin:0 auto}
+.studio{position:relative;width:100%;aspect-ratio:9/16;max-height:55vh;background:#000;border-radius:14px;overflow:hidden;border:1px solid #2a5570;touch-action:none;margin:0 auto}
 .studio canvas,.studio video.raw{width:100%;height:100%;object-fit:cover}
 .studio video.raw{position:absolute;opacity:0;pointer-events:none}
 .tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
@@ -42,8 +42,8 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
 </header>
 
 <div class="main-content">
-  <h1>TRANSMISIUNE VDO NINJA STYLE</h1>
-  <p class="muted">AI Cut, Fundaluri Video/Foto & Scalare Liberă</p>
+  <h1>STUDIO VDO NINJA & MUSIC BG</h1>
+  <p class="muted">Alege fundalul muzical, activează camera și transmite live</p>
 
   <div class="studio" id="stageBox">
     <video id="cam" class="raw" autoplay playsinline muted></video>
@@ -59,11 +59,13 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
     <button class="btn on" id="btnMic">🎙 Audio ON</button>
     <button class="btn on" id="btnVideoToggle">📹 Video ON</button>
     <button class="btn" id="btnAiCut">✂️ AI Cut OFF</button>
-    <button class="btn" id="btnRandomBg">🎲 Fundal Random</button>
-    <button class="btn" id="btnUploadBg">📁 Upload Fundal Foto</button>
-    <button class="btn" id="btnUploadBgVideo">🎥 Upload Fundal Video</button>
-    <button class="btn" id="btnUploadMask">🎭 Upload Mască PNG</button>
-    <button class="btn" id="btnScaleToggle">📐 Scalare: Fit</button>
+    <button class="btn" id="btnMusicBg1">🎵 Fundal Club</button>
+    <button class="btn" id="btnMusicBg2">🎧 Fundal DJ Neon</button>
+    <button class="btn" id="btnMusicBg3">🎸 Fundal Party Strobe</button>
+    <button class="btn" id="btnUploadBg">📁 Upload Foto</button>
+    <button class="btn" id="btnUploadBgVideo">🎥 Upload Video</button>
+    <button class="btn" id="btnUploadMask">🎭 Mască PNG</button>
+    <button class="btn" id="btnScaleToggle">📐 Scalare: Cover</button>
   </div>
 
   <div class="field">
@@ -78,8 +80,6 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
 <div class="toast" id="toast"></div>
 </div>
 
-<!-- MediaPipe pentru AI Cut / Decupare Fundal -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
 
 <script>
@@ -99,11 +99,75 @@ document.addEventListener('DOMContentLoaded', () => {
   let audioEnabled = true;
   let videoEnabled = true;
   let aiCutActive = false;
-  let scaleMode = 'cover'; // 'cover' sau 'contain' (scalare liberă)
+  let scaleMode = 'cover';
   
   window.customBgImage = null;
   window.customBgVideo = null;
   window.customMaskImage = null;
+
+  // Generare automată a celor 3 Fundaluri Muzicale Tematice la pornire
+  const bgCanvas = document.createElement('canvas');
+  bgCanvas.width = 720; bgCanvas.height = 1280;
+  const bCtx = bgCanvas.getContext('2d');
+
+  // Fundal 1: Club / Boxe & Lumini Roșu-Albastru
+  function createMusicBg1() {
+    bCtx.fillStyle = '#050510'; bCtx.fillRect(0, 0, 720, 1280);
+    let grad = bCtx.createRadialGradient(360, 640, 50, 360, 640, 600);
+    grad.addColorStop(0, '#ff0055'); grad.addColorStop(1, '#002244');
+    bCtx.fillStyle = grad; bCtx.fillRect(0, 0, 720, 1280);
+    // Efect note muzicale / cercuri
+    bCtx.strokeStyle = 'rgba(255,255,255,0.15)'; bCtx.lineWidth = 4;
+    bCtx.beginPath(); bCtx.arc(360, 640, 200, 0, Math.PI*2); bCtx.stroke();
+    bCtx.beginPath(); bCtx.arc(360, 640, 350, 0, Math.PI*2); bCtx.stroke();
+    let img = new Image(); img.src = bgCanvas.toDataURL();
+    return img;
+  }
+
+  // Fundal 2: DJ Neon Electric
+  function createMusicBg2() {
+    bCtx.fillStyle = '#021018'; bCtx.fillRect(0, 0, 720, 1280);
+    let grad = bCtx.createLinearGradient(0, 0, 720, 1280);
+    grad.addColorStop(0, '#00f0ff'); grad.addColorStop(1, '#7928ca');
+    bCtx.fillStyle = grad; bCtx.fillRect(0, 0, 720, 1280);
+    // Linii egalizator grafic simulate
+    bCtx.fillStyle = 'rgba(0,0,0,0.3)';
+    for(let i=0; i<720; i+=40) {
+      bCtx.fillRect(i, 900, 25, Math.sin(i)*250 + 300);
+    }
+    let img = new Image(); img.src = bgCanvas.toDataURL();
+    return img;
+  }
+
+  // Fundal 3: Party Strobe / Auriu & Violet
+  function createMusicBg3() {
+    bCtx.fillStyle = '#100515'; bCtx.fillRect(0, 0, 720, 1280);
+    let grad = bCtx.createRadialGradient(360, 200, 20, 360, 640, 700);
+    grad.addColorStop(0, '#ffb800'); grad.addColorStop(1, '#3a0ca3');
+    bCtx.fillStyle = grad; bCtx.fillRect(0, 0, 720, 1280);
+    let img = new Image(); img.src = bgCanvas.toDataURL();
+    return img;
+  }
+
+  // Setează din oficiu primul fundal muzical activ
+  window.customBgImage = createMusicBg1();
+
+  // Butoane selectare fundaluri muzicale
+  document.getElementById('btnMusicBg1').addEventListener('click', () => {
+    window.customBgVideo = null;
+    window.customBgImage = createMusicBg1();
+    showToast("Selectat: Fundal Club 🎵");
+  });
+  document.getElementById('btnMusicBg2').addEventListener('click', () => {
+    window.customBgVideo = null;
+    window.customBgImage = createMusicBg2();
+    showToast("Selectat: Fundal DJ Neon 🎧");
+  });
+  document.getElementById('btnMusicBg3').addEventListener('click', () => {
+    window.customBgVideo = null;
+    window.customBgImage = createMusicBg3();
+    showToast("Selectat: Fundal Party Strobe 🎸");
+  });
 
   // Setări Logo salvate
   const savedLogo = localStorage.getItem('dj_logo');
@@ -121,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       video.srcObject = localStream;
       await video.play();
-      showToast("Cameră și microfon pornite cu succes!");
+      showToast("Cameră și microfon pornite!");
     } catch(err) {
       console.error(err);
       showToast("Erore acces cameră. Verifică permisiunile.");
@@ -129,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   initCamera();
 
-  // Configurare MediaPipe Selfie Segmentation pentru AI Cut
+  // MediaPipe Selfie Segmentation (AI Cut)
   const selfieSegmentation = new SelfieSegmentation({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
   });
@@ -137,11 +201,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   selfieSegmentation.onResults((results) => {
     if (!aiCutActive) return;
-    drawCanvasWithSegmentation(results.segmentationMask);
+    drawWithSegmentation(results.segmentationMask);
   });
 
-  // Bucla principală de randare
-  function processFrame() {
+  // Buclă de Randare Permanentă pe Canvas (Garantează că te vezi mereu)
+  function renderLoop() {
     if (video.readyState >= video.HAVE_CURRENT_DATA) {
       if(canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
         canvas.width = video.videoWidth || 720;
@@ -151,15 +215,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (aiCutActive) {
         selfieSegmentation.send({ image: video });
       } else {
-        drawStandardFrame();
+        drawNormalFrame();
       }
     }
-    requestAnimationFrame(processFrame);
+    requestAnimationFrame(renderLoop);
   }
-  requestAnimationFrame(processFrame);
+  requestAnimationFrame(renderLoop);
 
-  // Randare Normală (fără AI Cut)
-  function drawStandardFrame() {
+  // Cadru Normal (Fundal + Video vizibil direct)
+  function drawNormalFrame() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawBackground();
 
@@ -170,19 +234,19 @@ document.addEventListener('DOMContentLoaded', () => {
     drawMaskAndLogo();
   }
 
-  // Randare cu AI Cut (Decupare siluetă personaj)
-  function drawCanvasWithSegmentation(mask) {
+  // Cadru cu AI Cut activ
+  function drawWithSegmentation(mask) {
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // 1. Desenează mai întâi fundalul ales
+    // 1. Desenează fundalul
     drawBackground();
 
-    // 2. Aplică masca AI pentru a tăia doar personajul
+    // 2. Taie masca siluetei
     ctx.globalCompositeOperation = 'destination-in';
     ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
 
-    // 3. Desenează video-ul tău doar în zona decupată de mască
+    // 3. Desenează video-ul tău în decupaj
     ctx.globalCompositeOperation = 'source-in';
     if (videoEnabled) {
       drawImageScaled(video, canvas, scaleMode);
@@ -192,7 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
     drawMaskAndLogo();
   }
 
-  // Desenare fundal (Video, Imagine sau Negru curat)
   function drawBackground() {
     if (window.customBgVideo && window.customBgVideo.readyState >= window.customBgVideo.HAVE_CURRENT_DATA) {
       ctx.drawImage(window.customBgVideo, 0, 0, canvas.width, canvas.height);
@@ -204,7 +267,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Scalare liberă (Cover vs Contain)
   function drawImageScaled(img, canvas, mode) {
     let hRatio = canvas.width / img.videoWidth;
     let vRatio = canvas.height / img.videoHeight;
@@ -214,7 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.drawImage(img, 0, 0, img.videoWidth, img.videoHeight, centerShiftX, centerShiftY, img.videoWidth * ratio, img.videoHeight * ratio);
   }
 
-  // Elemente suplimentare (Mască fixă pe față și Logo text)
   function drawMaskAndLogo() {
     if (window.customMaskImage) {
       const mw = canvas.width * 0.4;
@@ -241,18 +302,18 @@ document.addEventListener('DOMContentLoaded', () => {
     aiCutActive = !aiCutActive;
     btnAiCut.textContent = aiCutActive ? "✂️ AI Cut ON" : "✂️ AI Cut OFF";
     btnAiCut.classList.toggle('on', aiCutActive);
-    showToast(aiCutActive ? "AI Cut activat (Decupare fundal)" : "AI Cut dezactivat");
+    showToast(aiCutActive ? "AI Cut activat pe fundal!" : "AI Cut dezactivat");
   });
 
-  // Buton Scalare Liberă (Cover / Contain)
+  // Scalare liberă
   const btnScaleToggle = document.getElementById('btnScaleToggle');
   btnScaleToggle.addEventListener('click', () => {
     scaleMode = scaleMode === 'cover' ? 'contain' : 'cover';
     btnScaleToggle.textContent = scaleMode === 'cover' ? "📐 Scalare: Cover" : "📐 Scalare: Contain";
-    showToast(`Mod scalare setat pe: ${scaleMode}`);
+    showToast(`Mod scalare: ${scaleMode}`);
   });
 
-  // Buton Audio ON/OFF
+  // Audio ON/OFF
   const btnMic = document.getElementById('btnMic');
   btnMic.addEventListener('click', () => {
     if(!localStream) return;
@@ -260,10 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
     localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
     btnMic.textContent = audioEnabled ? "🎙 Audio ON" : "🔇 Audio OFF";
     btnMic.classList.toggle('on', audioEnabled);
-    showToast(audioEnabled ? "Microfon activat" : "Microfon dezactivat");
   });
 
-  // Buton Video ON/OFF
+  // Video ON/OFF
   const btnVideoToggle = document.getElementById('btnVideoToggle');
   btnVideoToggle.addEventListener('click', () => {
     if(!localStream) return;
@@ -271,29 +331,9 @@ document.addEventListener('DOMContentLoaded', () => {
     localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
     btnVideoToggle.textContent = videoEnabled ? "📹 Video ON" : "📴 Video OFF";
     btnVideoToggle.classList.toggle('on', videoEnabled);
-    showToast(videoEnabled ? "Video activat" : "Video oprit");
   });
 
-  // Fundal Random Generator
-  document.getElementById('btnRandomBg').addEventListener('click', () => {
-    window.customBgVideo = null;
-    const colors = ['#ff0055', '#00f0ff', '#7928ca', '#ffb800', '#28ca42'];
-    const c1 = colors[Math.floor(Math.random() * colors.length)];
-    const c2 = colors[Math.floor(Math.random() * colors.length)];
-    const canvasBg = document.createElement('canvas');
-    canvasBg.width = 800; canvasBg.height = 1200;
-    const cCtx = canvasBg.getContext('2d');
-    cCtx.fillStyle = '#071018'; cCtx.fillRect(0,0,800,1200);
-    const grad = cCtx.createRadialGradient(400, 300, 50, 400, 300, 400);
-    grad.addColorStop(0, c1); grad.addColorStop(1, c2);
-    cCtx.fillStyle = grad; cCtx.fillRect(0,0,800,1200);
-    
-    window.customBgImage = new Image();
-    window.customBgImage.src = canvasBg.toDataURL();
-    showToast("Fundal random generat cu succes!");
-  });
-
-  // Upload Fundal Foto
+  // Upload Foto
   const fileBg = document.getElementById('fileBg');
   document.getElementById('btnUploadBg').addEventListener('click', () => fileBg.click());
   fileBg.addEventListener('change', (e) => {
@@ -310,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Upload Fundal Video
+  // Upload Video
   const fileBgVideo = document.getElementById('fileBgVideo');
   const bgVideoElem = document.getElementById('bgVideoElem');
   document.getElementById('btnUploadBgVideo').addEventListener('click', () => fileBgVideo.click());
@@ -321,11 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
       bgVideoElem.src = URL.createObjectURL(file);
       bgVideoElem.play();
       window.customBgVideo = bgVideoElem;
-      showToast("Fundal video activat în buclă!");
+      showToast("Fundal video încărcat!");
     }
   });
 
-  // Upload Mască PNG
+  // Mască PNG
   const fileMask = document.getElementById('fileMask');
   document.getElementById('btnUploadMask').addEventListener('click', () => fileMask.click());
   fileMask.addEventListener('change', (e) => {
@@ -341,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Buton ON AIR (Transmitere)
+  // ON AIR Transmisie
   let isOnAir = false;
   const recBtn = document.getElementById('recBtn');
   const topLiveBadge = document.getElementById('topLiveBadge');
