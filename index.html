@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
 <title>DJCIOKOSTUDIO - ON AIR</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
 :root{--bg:#071018;--blue:#7ecbff;--blue2:#b9e4ff;--red:#c1392b;--text:#eaf6ff;--muted:#9bb6c9;--line:#1c3344}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -424,6 +425,7 @@ document.getElementById('recBtn').addEventListener('click', () => {
 
 initMediaPipe();
 requestAnimationFrame(renderLoop);
-</script>
+</script> 
+<script src="stream.js"></script>
 </body>
 </html>
