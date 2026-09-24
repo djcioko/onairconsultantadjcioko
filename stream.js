@@ -2,6 +2,27 @@
 let peerLive = null;
 let broadcastStream = null;
 
+function attachMicrophoneToBroadcast() {
+    if (!broadcastStream || typeof localStream === 'undefined' || !localStream) {
+        return false;
+    }
+    const microphoneTrack = localStream.getAudioTracks()[0];
+    if (!microphoneTrack) {
+        return false;
+    }
+    broadcastStream.getAudioTracks().forEach((track) => broadcastStream.removeTrack(track));
+    broadcastStream.addTrack(microphoneTrack);
+    return true;
+}
+
+async function waitForMicrophone() {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (attachMicrophoneToBroadcast()) return true;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+}
+
 function initStudioBroadcast() {
     // Verificăm dacă avem deja PeerJS încărcat
     if (typeof Peer === 'undefined') {
@@ -15,7 +36,7 @@ function initStudioBroadcast() {
         return;
     }
     
-    // Capturăm stream-ul video și audio de pe canvas-ul tău
+    // Canvas-ul furnizează video; microfonul este atașat separat din localStream.
     broadcastStream = canvasEl.captureStream(30); // 30 cadre pe secundă
 
     // Inițializăm PeerJS cu un ID unic stabil pentru studioul tău
@@ -29,7 +50,8 @@ function initStudioBroadcast() {
     });
 
     // Când un vizitator intră pe site-ul tău și cere stream-ul, îi răspundem cu stream-ul de pe canvas
-    peerLive.on('call', (call) => {
+    peerLive.on('call', async (call) => {
+        await waitForMicrophone();
         call.answer(broadcastStream);
         console.log('Un vizitator a accesat transmisiunea live!');
     });
