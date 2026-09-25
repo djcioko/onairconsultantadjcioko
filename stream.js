@@ -3,6 +3,57 @@ let peerLive = null;
 let broadcastStream = null;
 let onlineViewerCounter = null;
 
+function createViewerPresenceHub(render) {
+    const connections = new Set();
+    const watchingConnections = new Set();
+
+    function sendCount(connection, count) {
+        if (!connection.open) return;
+        try {
+            connection.send({ type: 'viewer-count', count });
+        } catch (error) {
+            console.warn('Contorul live nu a putut fi trimis:', error);
+        }
+    }
+
+    function broadcast() {
+        const count = watchingConnections.size;
+        render(count);
+        connections.forEach((connection) => sendCount(connection, count));
+    }
+
+    render(0);
+
+    return {
+        get value() {
+            return watchingConnections.size;
+        },
+        attach(connection) {
+            if (!connection || connection.label !== 'viewer-presence') return;
+            connections.add(connection);
+
+            const remove = () => {
+                const changed = watchingConnections.delete(connection);
+                connections.delete(connection);
+                if (changed) broadcast();
+            };
+
+            connection.on('data', (message) => {
+                if (!message || typeof message !== 'object') return;
+                if (message.type === 'watching' && !watchingConnections.has(connection)) {
+                    watchingConnections.add(connection);
+                    broadcast();
+                } else if (message.type === 'stopped' && watchingConnections.delete(connection)) {
+                    broadcast();
+                }
+            });
+            connection.on('close', remove);
+            connection.on('error', remove);
+            sendCount(connection, watchingConnections.size);
+        }
+    };
+}
+
 function createOnlineViewerCounter(render) {
     const activeConnections = new Set();
     render(0);
@@ -68,7 +119,7 @@ function initStudioBroadcast() {
     
     // Canvas-ul furnizează video; microfonul este atașat separat din localStream.
     broadcastStream = canvasEl.captureStream(30); // 30 cadre pe secundă
-    onlineViewerCounter = createOnlineViewerCounter(renderOnlineViewerCount);
+    onlineViewerCounter = createViewerPresenceHub(renderOnlineViewerCount);
 
     // Inițializăm PeerJS cu un ID unic stabil pentru studioul tău
     peerLive = new Peer('djcioko-studio-unic-id');
@@ -80,18 +131,17 @@ function initStudioBroadcast() {
         }
     });
 
+    peerLive.on('connection', (connection) => {
+        onlineViewerCounter.attach(connection);
+    });
+
     // Când un vizitator intră pe site-ul tău și cere stream-ul, îi răspundem cu stream-ul de pe canvas
     peerLive.on('call', async (call) => {
-        const disconnectViewer = onlineViewerCounter.connect();
-        call.on('close', disconnectViewer);
-        call.on('error', disconnectViewer);
-
         try {
             await waitForMicrophone();
             call.answer(broadcastStream);
             console.log('Un vizitator a accesat transmisiunea live!');
         } catch (error) {
-            disconnectViewer();
             console.error('Conexiunea vizitatorului a eșuat:', error);
         }
     });
