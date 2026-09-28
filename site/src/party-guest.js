@@ -320,7 +320,7 @@ export function createPartyGuest({
     if (ui) ui.resume.hidden = true;
     if (activeRoom) {
       unbindRoom(activeRoom);
-      try { await activeRoom.disconnect?.(); } catch { /* already disconnected */ }
+      try { await activeRoom.disconnect?.(stopTracks); } catch { /* already disconnected */ }
     }
   }
 
@@ -691,7 +691,10 @@ export function createPartyGuest({
     else if (!localTracks.video || !localTracks.audio) {
       throw Object.assign(new Error('MEDIA_ENDED'), {code: 'MEDIA_ENDED'});
     }
-    if (expectedEpoch !== epoch) return false;
+    if (expectedEpoch !== epoch) {
+      stopLocalTracks();
+      return false;
+    }
     const nextRoom = roomFactory({adaptiveStream: true, dynacast: true});
     if (!nextRoom) throw Object.assign(new Error('LIVE_UNAVAILABLE'), {code: 'LIVE_UNAVAILABLE'});
     room = nextRoom;

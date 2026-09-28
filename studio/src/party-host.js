@@ -276,7 +276,7 @@ export function createPartyHost({
     grid.clear();
     if (activeRoom) {
       unbindRoom(activeRoom);
-      try { await activeRoom.disconnect?.(); } catch { /* already gone */ }
+      try { await activeRoom.disconnect?.(releaseTracks); } catch { /* already gone */ }
     }
   }
 
@@ -541,7 +541,9 @@ export function createPartyHost({
         });
       }
       return {requiresConfirmation: false};
-    })();
+    })().finally(() => {
+      closeInFlight = null;
+    });
     return closeInFlight;
   }
 

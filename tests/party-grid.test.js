@@ -69,6 +69,16 @@ describe('stable party grid', () => {
     expect(tile.querySelector('[data-kind="camera"]').dataset.state).toBe('off');
   });
 
+  it('mutes only the local audio element to prevent self-monitoring and feedback', () => {
+    const {grid, root} = fixture({localIdentity: 'host'});
+    grid.applyRoster([
+      participant('host', {role: 'host', displayName: 'DJ Cioko', displaySequence: 0}),
+      participant('guest'),
+    ]);
+    expect(root.querySelector('[data-identity="host"] audio').muted).toBe(true);
+    expect(root.querySelector('[data-identity="guest"] audio').muted).toBe(false);
+  });
+
   it('reuses tiles and media elements across reconnect/name/status updates', () => {
     const {grid, root} = fixture();
     grid.applyRoster([

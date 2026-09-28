@@ -41,6 +41,7 @@ describe('party API request contract', () => {
     await value.api.join({idempotencyKey: 'idem-join'});
     await value.api.reconnect({idempotencyKey: 'idem-reconnect'});
     await value.api.leave({idempotencyKey: 'idem-leave', keepalive: true});
+    await value.api.adminAvailability();
     await value.api.adminOpen({idempotencyKey: 'idem-open'});
     await value.api.adminRejoin({sessionId: 'session-1', idempotencyKey: 'idem-rejoin'});
     await value.api.adminStatus({sessionId: 'session-1', sinceRevision: 7, waitMs: 7000});
@@ -68,6 +69,7 @@ describe('party API request contract', () => {
       '/api/live/party/join',
       '/api/live/party/reconnect',
       '/api/live/party/leave',
+      '/api/admin/live/party/availability',
       '/api/admin/live/party/open',
       '/api/admin/live/party/host-rejoin',
       '/api/admin/live/party/status?sessionId=session-1&sinceRevision=7&waitMs=7000',
@@ -78,10 +80,10 @@ describe('party API request contract', () => {
     ]);
     expect(value.calls.map(call => call.options.method)).toEqual([
       'GET', 'POST', 'GET', 'POST', 'POST', 'POST', 'POST',
-      'POST', 'POST', 'GET', 'POST', 'POST', 'POST', 'POST',
+      'GET', 'POST', 'POST', 'GET', 'POST', 'POST', 'POST', 'POST',
     ]);
     expect(value.calls.map(call => call.options.body && JSON.parse(call.options.body))).toEqual([
-      undefined, {name: 'Ana'}, undefined, {}, {}, {}, {}, {},
+      undefined, {name: 'Ana'}, undefined, {}, {}, {}, {}, undefined, {},
       {sessionId: 'session-1'}, undefined,
       {sessionId: 'session-1', requestId: 'request-1', expectedRevision: 8},
       {sessionId: 'session-1', requestId: 'request-2', expectedRevision: 9},

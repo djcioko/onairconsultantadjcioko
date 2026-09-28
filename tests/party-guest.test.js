@@ -323,9 +323,11 @@ describe('party guest request lifecycle', () => {
 
 
 describe('party guest media lifecycle', () => {
-  async function acceptedFixture({api: overrides = {}, room, rooms} = {}) {
+  async function acceptedFixture({
+    api: overrides = {}, room, rooms, mediaDevices: providedMediaDevices,
+  } = {}) {
     const stream = mediaStream();
-    const mediaDevices = {getUserMedia: vi.fn(async () => stream)};
+    const mediaDevices = providedMediaDevices ?? {getUserMedia: vi.fn(async () => stream)};
     const createdRooms = rooms ?? [room ?? new FakeRoom()];
     const roomFactory = vi.fn(() => createdRooms.shift());
     const api = apiFixture({
@@ -458,7 +460,7 @@ describe('party guest media lifecycle', () => {
     expect(videoPublication.track.unmute).toHaveBeenCalledTimes(1);
 
     await value.controller.leave();
-    expect(room.disconnect).toHaveBeenCalledTimes(1);
+    expect(room.disconnect).toHaveBeenCalledWith(true);
     expect(value.api.leave).toHaveBeenCalledTimes(1);
     expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
     expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
@@ -473,12 +475,32 @@ describe('party guest media lifecycle', () => {
     await value.controller.reconnect();
     expect(value.api.reconnect).toHaveBeenCalledTimes(1);
     expect(value.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(firstRoom.disconnect).toHaveBeenCalledWith(false);
     expect(secondRoom.connect).toHaveBeenCalledWith(
       'wss://live.example.test', 'reconnect-token', {autoSubscribe: true},
     );
     expect(value.latest()).toMatchObject({
       status: 'joined', identity: 'guest-stable', generation: 2,
     });
+  });
+
+  it('stops media that resolves after leaving during the permission prompt', async () => {
+    let resolveMedia;
+    const lateStream = mediaStream();
+    const mediaDevices = {
+      getUserMedia: vi.fn(() => new Promise(resolve => { resolveMedia = resolve; })),
+    };
+    const value = await acceptedFixture({mediaDevices});
+
+    const joining = value.controller.join();
+    await vi.waitFor(() => expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1));
+    await value.controller.leave();
+    resolveMedia(lateStream);
+    await joining;
+
+    expect(lateStream.video.stop).toHaveBeenCalledTimes(1);
+    expect(lateStream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(value.latest()).toMatchObject({status: 'idle', requestId: null});
   });
 
   it('rejects a reconnect grant that changes identity and releases the seat', async () => {

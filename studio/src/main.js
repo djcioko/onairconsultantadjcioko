@@ -90,7 +90,7 @@ async function ensurePartyStudio() {
   const browserKey=loadOrCreatePartyBrowserKey(localStorage);
   if(!partyApi) partyApi=createPartyApi({csrf:bootstrap.csrf_token,browserKey});
   let status;
-  try { status=await partyApi.getStatus(); }
+  try { status=await partyApi.adminAvailability(); }
   catch { status={enabled:false}; }
   partyAvailability=status.enabled===true;
   setPartyHostAvailability({enabled:partyAvailability,panel:$('party-panel'),legacyPanel:$('legacy-private-panel')});

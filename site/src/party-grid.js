@@ -76,6 +76,7 @@ export function createPartyGrid({root, localIdentity = '', onRemove = null}) {
     const audio = document.createElement('audio');
     audio.className = 'party-audio';
     audio.autoplay = true;
+    audio.muted = identity === localIdentity;
     audio.hidden = true;
     const fallback = text(document, 'div', 'party-initials');
     fallback.setAttribute('aria-hidden', 'true');

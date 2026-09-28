@@ -21,7 +21,9 @@ if (process.env.PARTY_TEST_PREACTIVATION === '1' && durationMs < 1_200_000) {
 
 
 async function publicTrackSignature(page) {
-  return page.evaluate(() => [...document.querySelectorAll('video')].map(video => ({
+  return page.evaluate(() => [...document.querySelectorAll(
+    '#dj-live-host video[aria-label="Transmisie DJ CIOKO"]',
+  )].map(video => ({
     id: video.id,
     tracks: video.srcObject?.getTracks?.().map(track => `${track.kind}:${track.id}`) ?? [],
   })));

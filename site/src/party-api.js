@@ -157,6 +157,10 @@ export function createPartyApi({
       body: {}, admin: true, idempotencyKey,
     }),
 
+    adminAvailability: () => call('/api/admin/live/party/availability', {
+      admin: true,
+    }),
+
     adminRejoin: ({sessionId, idempotencyKey}) => call(
       '/api/admin/live/party/host-rejoin',
       {body: {sessionId}, admin: true, idempotencyKey},

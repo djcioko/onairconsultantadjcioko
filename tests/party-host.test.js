@@ -345,6 +345,7 @@ describe('party host room lifecycle', () => {
     await value.controller.reconnect();
     expect(value.api.adminRejoin).toHaveBeenCalledTimes(1);
     expect(value.media.bridge.createOwnedTracks).toHaveBeenCalledTimes(1);
+    expect(first.disconnect).toHaveBeenCalledWith(false);
     expect(second.connect).toHaveBeenCalledWith('wss://djcioko.ro', 'rejoin-token', {autoSubscribe: true});
     expect(second.localParticipant.publishTrack).toHaveBeenCalledTimes(2);
     expect(value.latest()).toMatchObject({status: 'open', identity: 'host-stable', generation: 2});
@@ -372,9 +373,26 @@ describe('party host room lifecycle', () => {
     expect(api.adminClose).not.toHaveBeenCalled();
     await value.controller.close({confirmed: true});
     expect(api.adminClose).toHaveBeenCalledTimes(1);
-    expect(room.disconnect).toHaveBeenCalledTimes(1);
+    expect(room.disconnect).toHaveBeenCalledWith(true);
     expect(value.media.bridge.stopOwnedTracks).toHaveBeenCalledTimes(1);
     expect(value.grid.clear).toHaveBeenCalled();
+    expect(value.latest()).toMatchObject({status: 'closed', occupancy: 0});
+  });
+
+  it('can close a newly opened room after a prior room was closed', async () => {
+    const first = new FakeRoom();
+    const second = new FakeRoom();
+    const value = fixture({rooms: [first, second]});
+
+    await value.controller.open();
+    await value.controller.close({confirmed: true});
+    await value.controller.open();
+    await value.controller.close({confirmed: true});
+
+    expect(value.api.adminOpen).toHaveBeenCalledTimes(2);
+    expect(value.api.adminClose).toHaveBeenCalledTimes(2);
+    expect(first.disconnect).toHaveBeenCalledWith(true);
+    expect(second.disconnect).toHaveBeenCalledWith(true);
     expect(value.latest()).toMatchObject({status: 'closed', occupancy: 0});
   });
 
