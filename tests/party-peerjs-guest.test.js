@@ -161,7 +161,15 @@ function fixture({
   storage = memoryStorage(),
   timers = manualTimers(),
   publicLive = 'playing',
+  legacyStatus = null,
 } = {}) {
+  let legacyStatusText = null;
+  if (legacyStatus !== null) {
+    legacyStatusText = document.createElement('p');
+    legacyStatusText.id = 'statusText';
+    legacyStatusText.textContent = legacyStatus;
+    document.body.append(legacyStatusText);
+  }
   let publicLivePlayer = null;
   if (publicLive !== 'absent') {
     publicLivePlayer = document.createElement('video');
@@ -201,6 +209,7 @@ function fixture({
   return {
     controller,
     host: () => peer.connections.at(-1),
+    legacyStatusText,
     mediaDevices,
     peer,
     publicLivePlayer,
@@ -243,6 +252,41 @@ beforeEach(() => {
 
 
 describe('PeerJS party request lifecycle', () => {
+  it('shows the legacy receiver status only after both LIVE video and LIVE copy arrive', async () => {
+    const value = await connectedFixture({
+      publicLive: 'offline',
+      legacyStatus: 'Se conectează la aplicația DJCIOKOSTUDIO...',
+    });
+
+    expect(value.legacyStatusText.hidden).toBe(true);
+    expect(value.legacyStatusText.style.display).toBe('none');
+
+    value.publicLivePlayer.srcObject = mediaStream();
+    value.publicLivePlayer.dispatchEvent(new Event('playing'));
+    expect(value.legacyStatusText.hidden).toBe(true);
+
+    value.legacyStatusText.textContent = '🔴 LIVE DJCIOKOSTUDIO';
+    await vi.waitFor(() => expect(value.legacyStatusText.hidden).toBe(false));
+    expect(value.legacyStatusText.style.display).toBe('');
+
+    value.legacyStatusText.textContent = 'Aștept aplicația de pe telefon...';
+    await vi.waitFor(() => expect(value.legacyStatusText.hidden).toBe(true));
+    expect(value.legacyStatusText.style.display).toBe('none');
+  });
+
+  it('hides a visible legacy LIVE status immediately when the video track disappears', async () => {
+    const value = await connectedFixture({
+      legacyStatus: '🔴 LIVE DJCIOKOSTUDIO',
+    });
+
+    expect(value.legacyStatusText.hidden).toBe(false);
+    value.publicLivePlayer.srcObject = null;
+    value.publicLivePlayer.dispatchEvent(new Event('emptied'));
+
+    expect(value.legacyStatusText.hidden).toBe(true);
+    expect(value.legacyStatusText.style.display).toBe('none');
+  });
+
   it('fails closed when the public LIVE player is missing', async () => {
     const value = await connectedFixture({publicLive: 'absent'});
     await value.host().emit('data', {type: 'party-status', open: true, capacity: 9, occupancy: 1});

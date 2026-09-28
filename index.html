@@ -52,7 +52,7 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
   </header>
   <div class="main-content">
     <h1>STUDIO VDO NINJA &amp; MUSIC BG</h1>
-    <p class="muted">Apasă START CAMERA, alege fundalul, apoi ON AIR</p>
+    <p class="muted">Apasă START CAMERA — transmisia pornește automat ON AIR</p>
     <div class="studio" id="stageBox">
       <video id="cam" class="raw" autoplay playsinline muted></video>
       <video id="bgVideoElem" class="raw" playsinline loop muted></video>
@@ -118,6 +118,7 @@ let liveStream = null;
 let liveVideoEl = null;
 let mpBusy = false;
 let selfieSegmentation = null;
+let screenWakeLock = null;
 
 window.customBgImage = null;
 window.customBgVideo = null;
@@ -298,7 +299,8 @@ async function startCamera() {
     video.setAttribute('playsinline', 'true');
     await video.play();
     startOverlay.classList.add('hidden');
-    showToast('Cameră pornită');
+    await setOnAir(true);
+    showToast('Cameră pornită · ON AIR');
   } catch (err) {
     console.error(err);
     startOverlay.classList.remove('hidden');
@@ -326,6 +328,55 @@ function startLivePreview() {
   liveVideoEl.playsInline = true;
   liveVideoEl.play().catch(() => {});
   showToast('ON AIR: canvas-ul e stream. În VDO.Ninja alege screen/window sau Virtual Cam.');
+}
+
+async function requestScreenWakeLock() {
+  if (!isOnAir || document.visibilityState !== 'visible' || !navigator.wakeLock?.request) return;
+  if (screenWakeLock && !screenWakeLock.released) return;
+
+  try {
+    const requestedLock = await navigator.wakeLock.request('screen');
+    if (!isOnAir || document.visibilityState !== 'visible') {
+      await requestedLock.release();
+      return;
+    }
+    screenWakeLock = requestedLock;
+    requestedLock.addEventListener?.('release', () => {
+      if (screenWakeLock === requestedLock) screenWakeLock = null;
+    });
+  } catch (_) {
+    screenWakeLock = null;
+  }
+}
+
+async function releaseScreenWakeLock() {
+  const lock = screenWakeLock;
+  screenWakeLock = null;
+  if (!lock || lock.released) return;
+  try {
+    await lock.release();
+  } catch (_) {
+    // Some phones release the lock automatically when the page is hidden.
+  }
+}
+
+async function setOnAir(active) {
+  isOnAir = Boolean(active);
+  document.getElementById('recBtn').classList.toggle('rec', isOnAir);
+  document.getElementById('topLiveBadge').classList.toggle('active', isOnAir);
+  window.dispatchEvent(new CustomEvent('djcioko-onair-change', {
+    detail: {active: isOnAir}
+  }));
+
+  if (isOnAir) {
+    startLivePreview();
+    await requestScreenWakeLock();
+    return;
+  }
+
+  stopLivePreview();
+  await releaseScreenWakeLock();
+  showToast('Transmisie oprită');
 }
 
 document.getElementById('btnStartCam').addEventListener('click', startCamera);
@@ -415,24 +466,23 @@ document.getElementById('fileMask').addEventListener('change', (e) => {
   img.src = URL.createObjectURL(file);
 });
 
-document.getElementById('recBtn').addEventListener('click', () => {
+document.getElementById('recBtn').addEventListener('click', async () => {
   if (!localStream) {
-    startCamera();
+    await startCamera();
     return;
   }
-  isOnAir = !isOnAir;
-  document.getElementById('recBtn').classList.toggle('rec', isOnAir);
-  document.getElementById('topLiveBadge').classList.toggle('active', isOnAir);
-  if (isOnAir) startLivePreview();
-  else {
-    stopLivePreview();
-    showToast('Transmisie oprită');
-  }
+  await setOnAir(!isOnAir);
 });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && isOnAir) requestScreenWakeLock();
+  else releaseScreenWakeLock();
+});
+window.addEventListener('pagehide', releaseScreenWakeLock);
 
 initMediaPipe();
 requestAnimationFrame(renderLoop);
 </script> 
-<script src="stream.js?v=party-peerjs-v3"></script>
+<script src="stream.js?v=party-peerjs-v4"></script>
 </body>
 </html>

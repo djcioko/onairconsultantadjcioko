@@ -6,6 +6,78 @@ let broadcastStream = null;
 let onlineViewerCounter = null;
 let peerPartyHost = null;
 
+
+function createPublicLiveCallRegistry({
+    isActive = () => true
+} = {}) {
+    const calls = new Set();
+
+    function remove(call) {
+        calls.delete(call);
+    }
+
+    function closeAll() {
+        [...calls].forEach(call => {
+            calls.delete(call);
+
+            try {
+                call.close();
+            } catch (_) {}
+        });
+    }
+
+    return {
+        get size() {
+            return calls.size;
+        },
+        canAnswer() {
+            try {
+                return Boolean(isActive());
+            } catch (_) {
+                return false;
+            }
+        },
+        track(call) {
+            if (!call || !this.canAnswer()) {
+                return false;
+            }
+
+            calls.add(call);
+            call.on?.('close', () => remove(call));
+            call.on?.('error', () => remove(call));
+            return true;
+        },
+        sync() {
+            if (!this.canAnswer()) {
+                closeAll();
+            }
+        },
+        closeAll
+    };
+}
+
+
+function studioIsOnAir() {
+    return (
+        typeof isOnAir !== 'undefined' &&
+        isOnAir === true &&
+        typeof localStream !== 'undefined' &&
+        Boolean(localStream)
+    );
+}
+
+
+const publicLiveCallRegistry =
+    createPublicLiveCallRegistry({
+        isActive: studioIsOnAir
+    });
+
+
+window.addEventListener(
+    'djcioko-onair-change',
+    () => publicLiveCallRegistry.sync()
+);
+
 /* =========================================================
    VIEWER COUNTER EXISTENT
    ========================================================= */
@@ -540,7 +612,11 @@ function createPeerPartyHostState({
             return;
         }
 
-        if (!roomOpen) {
+        const canReceiveDuringReconnect =
+            peerStatus === 'reconnecting' &&
+            roomRequestedOpen;
+
+        if (!roomOpen && !canReceiveDuringReconnect) {
             send(connection, {
                 type: 'room-closed',
                 requestId: update.requestId
@@ -673,9 +749,19 @@ function createPeerPartyHostState({
 
         connection.on('data', message => {
             if (
-                !ownsStablePeerId() ||
+                (
+                    peerStatus !== 'online' &&
+                    peerStatus !== 'reconnecting'
+                ) ||
                 !message ||
                 typeof message !== 'object'
+            ) {
+                return;
+            }
+
+            if (
+                peerStatus === 'reconnecting' &&
+                message.type !== 'guest-request'
             ) {
                 return;
             }
@@ -1050,6 +1136,65 @@ function createPeerPartyHostState({
 }
 
 
+function createPeerPartyRequestNotifier({
+    vibrate = pattern => {
+        if (
+            typeof navigator !== 'undefined' &&
+            typeof navigator.vibrate === 'function'
+        ) {
+            return navigator.vibrate(pattern);
+        }
+
+        return false;
+    },
+    onNewRequest = () => {}
+} = {}) {
+    const knownRequestIds = new Set();
+
+    return {
+        sync(entries = []) {
+            const currentRequestIds = new Set();
+            let hasNewRequest = false;
+
+            entries.forEach(entry => {
+                const requestId = String(
+                    entry?.requestId || ''
+                );
+
+                if (!requestId) {
+                    return;
+                }
+
+                currentRequestIds.add(requestId);
+
+                if (!knownRequestIds.has(requestId)) {
+                    hasNewRequest = true;
+
+                    try {
+                        onNewRequest(entry);
+                    } catch (_) {}
+                }
+            });
+
+            knownRequestIds.clear();
+            currentRequestIds.forEach(requestId =>
+                knownRequestIds.add(requestId)
+            );
+
+            if (hasNewRequest) {
+                try {
+                    vibrate([220, 100, 220]);
+                } catch (_) {}
+            }
+        }
+    };
+}
+
+
+const peerPartyRequestNotifier =
+    createPeerPartyRequestNotifier();
+
+
 function createPeerPartyHostUiModel(state) {
     const peerStatus = state.peerStatus || 'online';
     const peerReady =
@@ -1123,6 +1268,12 @@ function ensurePeerPartyHostUi() {
       .dj-party-meta strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:11px}
       .dj-party-state{display:block;margin-top:3px;color:#b9e4ff}
       .dj-party-remove{position:absolute;right:5px;top:5px;z-index:2;min-height:32px;padding:5px 7px;background:#8b2937;border-color:#b74d5c;font-size:9px}
+      .dj-party-alert{position:fixed;z-index:10000;top:calc(env(safe-area-inset-top,0px) + 62px);left:50%;width:min(410px,calc(100vw - 20px));transform:translateX(-50%);padding:12px;border:2px solid #f2c94c;border-radius:14px;background:rgba(7,16,24,.98);box-shadow:0 12px 35px rgba(0,0,0,.55);color:#fff}
+      .dj-party-alert[hidden]{display:none}
+      .dj-party-alert-title{display:block;margin-bottom:9px;color:#f7d968;font-size:13px;text-align:center}
+      .dj-party-alert-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .dj-party-alert button{min-height:46px;border:1px solid #79bce5;border-radius:10px;background:#176b48;color:#fff;font:700 12px Georgia,serif}
+      .dj-party-alert .reject{background:#8b2937;border-color:#b74d5c}
       @media (min-width:390px){.dj-party-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
@@ -1143,6 +1294,13 @@ function ensurePeerPartyHostUi() {
         <button type="button" id="djPeerPartyOpen" disabled>Deschide camera</button>
         <button type="button" id="djPeerPartyClose" class="dj-party-close" disabled>Închide camera</button>
       </div>
+      <aside class="dj-party-alert" id="djPeerPartyAlert" role="alert" aria-live="assertive" hidden>
+        <strong class="dj-party-alert-title" id="djPeerPartyAlertTitle">✋ Cerere nouă</strong>
+        <div class="dj-party-alert-actions">
+          <button type="button" id="djPeerPartyAlertAccept">Acceptă</button>
+          <button type="button" class="reject" id="djPeerPartyAlertReject">Respinge</button>
+        </div>
+      </aside>
       <div class="dj-party-requests" id="djPeerPartyRequests"></div>
       <div class="dj-party-grid" id="djPeerPartyGrid" aria-label="Invitați conectați"></div>
     `;
@@ -1184,6 +1342,28 @@ function ensurePeerPartyHostUi() {
             peerPartyHost?.closeRoom();
         });
 
+    document
+        .getElementById('djPeerPartyAlertAccept')
+        .addEventListener('click', event => {
+            const requestId =
+                event.currentTarget.dataset.requestId;
+
+            if (requestId) {
+                peerPartyHost?.acceptRequest(requestId);
+            }
+        });
+
+    document
+        .getElementById('djPeerPartyAlertReject')
+        .addEventListener('click', event => {
+            const requestId =
+                event.currentTarget.dataset.requestId;
+
+            if (requestId) {
+                peerPartyHost?.declineRequest(requestId);
+            }
+        });
+
     ['btnMic', 'btnVideoToggle'].forEach(id => {
         document.getElementById(id)?.addEventListener(
             'click',
@@ -1219,6 +1399,18 @@ function renderPeerPartyHostState(state) {
     const grid = root.querySelector(
         '#djPeerPartyGrid'
     );
+    const alert = root.querySelector(
+        '#djPeerPartyAlert'
+    );
+    const alertTitle = root.querySelector(
+        '#djPeerPartyAlertTitle'
+    );
+    const alertAccept = root.querySelector(
+        '#djPeerPartyAlertAccept'
+    );
+    const alertReject = root.querySelector(
+        '#djPeerPartyAlertReject'
+    );
 
     count.textContent =
         `${state.occupancy}/${state.capacity}`;
@@ -1232,8 +1424,32 @@ function renderPeerPartyHostState(state) {
     );
 
     if (headerBadge) {
-        headerBadge.textContent = uiModel.badgeText;
+        headerBadge.textContent = state.pending.length
+            ? `✋ ${state.pending.length} CERERE${state.pending.length === 1 ? '' : 'RI'}`
+            : uiModel.badgeText;
     }
+
+    const firstPending = state.pending[0] || null;
+    alert.hidden = !firstPending;
+
+    if (firstPending) {
+        alertTitle.textContent =
+            `✋ ${firstPending.name} vrea să intre LIVE`;
+        alertAccept.dataset.requestId =
+            firstPending.requestId;
+        alertReject.dataset.requestId =
+            firstPending.requestId;
+        alertAccept.disabled =
+            uiModel.requestControlsDisabled ||
+            state.occupancy >= state.capacity;
+        alertReject.disabled =
+            uiModel.requestControlsDisabled;
+    } else {
+        delete alertAccept.dataset.requestId;
+        delete alertReject.dataset.requestId;
+    }
+
+    peerPartyRequestNotifier.sync(state.pending);
 
     requests.replaceChildren();
 
@@ -2392,7 +2608,21 @@ function initStudioBroadcast() {
              * LIVE NORMAL EXISTENT
              */
             try {
+                if (
+                    !publicLiveCallRegistry.canAnswer()
+                ) {
+                    call.close();
+                    return;
+                }
+
                 await waitForMicrophone();
+
+                if (
+                    !publicLiveCallRegistry.track(call)
+                ) {
+                    call.close();
+                    return;
+                }
 
                 call.answer(
                     broadcastStream
@@ -2424,12 +2654,6 @@ window.addEventListener(
     () => {
 
         ensurePeerPartyHostUi();
-
-        setTimeout(
-            () => {
-                initStudioBroadcast();
-            },
-            2000
-        );
+        initStudioBroadcast();
     }
 );

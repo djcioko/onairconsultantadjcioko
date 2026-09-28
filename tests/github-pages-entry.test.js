@@ -9,5 +9,5 @@ test('GitHub Pages opens the PeerJS host directly without a broken server-studio
   expect(html).not.toMatch(/href=["']\/admin\/live-studio\//);
   expect(html).toMatch(/data-peer-host-status/);
   expect(html).toMatch(/PEERJS GAZDĂ/);
-  expect(html).toContain('stream.js?v=party-peerjs-v3');
+  expect(html).toContain('stream.js?v=party-peerjs-v4');
 });

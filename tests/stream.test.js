@@ -229,6 +229,77 @@ test('party host ignores guest traffic until it owns the stable PeerJS ID', () =
   assert.equal(owned.sent.length, 1);
 });
 
+test('party host keeps a request received on an existing channel during signaling reconnect', () => {
+  const context = loadStreamScript();
+  const host = context.createPeerPartyHostState();
+  const connection = new FakeConnection('guest-request');
+
+  host.attachConnection(connection);
+  host.setPeerStatus('reconnecting');
+  connection.emit('data', guestRequest({
+    requestId: 'request-mobile',
+    peerId: 'peer-mobile',
+    clientId: 'client-mobile',
+    name: 'Alex',
+  }));
+
+  assert.deepEqual(plain(host.snapshot().pending.map((entry) => ({
+    requestId: entry.requestId,
+    name: entry.name,
+  }))), [{requestId: 'request-mobile', name: 'Alex'}]);
+  assert.equal(host.snapshot().roomOpen, false);
+
+  host.setPeerStatus('online');
+  assert.equal(host.snapshot().roomOpen, true);
+  assert.equal(host.snapshot().pending.length, 1);
+});
+
+test('mobile request notifier vibrates only for newly arrived requests', () => {
+  const context = loadStreamScript();
+  const vibrations = [];
+  const arrivals = [];
+  const notifier = context.createPeerPartyRequestNotifier({
+    vibrate: pattern => vibrations.push(pattern),
+    onNewRequest: entry => arrivals.push(entry.name),
+  });
+
+  notifier.sync([]);
+  notifier.sync([{requestId: 'request-1', name: 'Alex'}]);
+  notifier.sync([{requestId: 'request-1', name: 'Alex'}]);
+  notifier.sync([
+    {requestId: 'request-1', name: 'Alex'},
+    {requestId: 'request-2', name: 'Mara'},
+  ]);
+
+  assert.deepEqual(arrivals, ['Alex', 'Mara']);
+  assert.deepEqual(plain(vibrations), [
+    [220, 100, 220],
+    [220, 100, 220],
+  ]);
+});
+
+test('public LIVE calls follow ON AIR without requiring a viewer refresh', () => {
+  const context = loadStreamScript();
+  let onAir = false;
+  const registry = context.createPublicLiveCallRegistry({
+    isActive: () => onAir,
+  });
+  const waitingCall = new FakeCall('viewer-waiting');
+
+  assert.equal(registry.track(waitingCall), false);
+  assert.equal(waitingCall.closed, false);
+
+  onAir = true;
+  const liveCall = new FakeCall('viewer-live');
+  assert.equal(registry.track(liveCall), true);
+  assert.equal(registry.size, 1);
+
+  onAir = false;
+  registry.sync();
+  assert.equal(liveCall.closed, true);
+  assert.equal(registry.size, 0);
+});
+
 test('party host UI model disables controls and explains PeerJS ownership states', () => {
   const context = loadStreamScript();
   const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});

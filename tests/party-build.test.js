@@ -38,7 +38,7 @@ describe('deterministic party release', () => {
   });
 
   it('tracks the approved PeerJS host and keeps GitHub Pages self-contained', () => {
-    expect(hash(resolve('stream.js'))).toBe('26963c49baf7f86483d437eb57a72e2014929a0e3fc0905cfea47f2224289766');
+    expect(hash(resolve('stream.js'))).toBe('8ced0d8a86f9b5a9347d865f4b5578af54b9f10d6ab44fa773f02e9c667ae590');
     expect(hash(resolve('site-viewer-presence.js'))).toBe('ea1fd7f3c73b5cad353efc5323382b106888e4387d3242f4006c1c7dcafef3d9');
     const html = readFileSync(resolve('index.html'), 'utf8');
     expect(html).toContain('data-peer-host-status');

@@ -101,6 +101,11 @@ function statusCopy(status) {
 }
 
 
+function legacyStatusSaysLive(value) {
+  return /^(?:🔴\s*)?LIVE(?:\s+DJCIOKOSTUDIO)?[!.]?$/iu.test(String(value ?? '').trim());
+}
+
+
 function renderShell(root, names) {
   root.innerHTML = `
     <div class="party-peerjs-card">
@@ -174,6 +179,9 @@ export function createPeerJsPartyGuest({
   let publicLiveVideo = null;
   let publicLiveTrack = null;
   const publicLiveCleanups = [];
+  let legacyStatusText = null;
+  let legacyStatusObserver = null;
+  let legacyStatusOriginal = null;
   const roster = new Map();
   const calls = new Map();
   const tiles = new Map();
@@ -198,6 +206,54 @@ export function createPeerJsPartyGuest({
     ui.camera.setAttribute('aria-pressed', String(snapshot.cameraEnabled));
     ui.microphone.textContent = snapshot.microphoneEnabled ? '🎙 Microfon' : '🔇 Microfon oprit';
     ui.camera.textContent = snapshot.cameraEnabled ? '📹 Cameră' : '🚫 Cameră oprită';
+    syncLegacyStatusVisibility();
+  }
+
+  function restoreLegacyStatus() {
+    if (!legacyStatusText || !legacyStatusOriginal) return;
+    legacyStatusText.hidden = legacyStatusOriginal.hidden;
+    legacyStatusText.style.display = legacyStatusOriginal.display;
+  }
+
+  function findLegacyStatus() {
+    const next = root?.ownerDocument?.getElementById('statusText') ?? null;
+    if (next === legacyStatusText) return next;
+    restoreLegacyStatus();
+    legacyStatusText = next;
+    legacyStatusOriginal = next ? {
+      hidden: next.hidden,
+      display: next.style.display,
+    } : null;
+    return next;
+  }
+
+  function syncLegacyStatusVisibility() {
+    const status = findLegacyStatus();
+    if (!status) return;
+    const visible = snapshot.liveAvailable && legacyStatusSaysLive(status.textContent);
+    status.hidden = !visible;
+    status.style.display = visible ? '' : 'none';
+  }
+
+  function bindLegacyStatusGate() {
+    syncLegacyStatusVisibility();
+    const Observer = root?.ownerDocument?.defaultView?.MutationObserver
+      ?? globalThis.MutationObserver;
+    if (!Observer || !root?.ownerDocument?.documentElement) return;
+    legacyStatusObserver = new Observer(syncLegacyStatusVisibility);
+    legacyStatusObserver.observe(root.ownerDocument.documentElement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+
+  function unbindLegacyStatusGate() {
+    legacyStatusObserver?.disconnect?.();
+    legacyStatusObserver = null;
+    restoreLegacyStatus();
+    legacyStatusText = null;
+    legacyStatusOriginal = null;
   }
 
   function publicLiveIsPlaying() {
@@ -748,6 +804,7 @@ export function createPeerJsPartyGuest({
     reconnectTimer = null;
     pageWindow?.removeEventListener?.('pagehide', pageHide);
     unbindPublicLiveGate();
+    unbindLegacyStatusGate();
     await leave({notify: true});
     safeClose(hostConnection);
     hostConnection = null;
@@ -767,6 +824,7 @@ export function createPeerJsPartyGuest({
     ui = renderShell(root, readNames(storage));
     root.hidden = false;
     root.dataset.partyPeerjsMounted = 'true';
+    bindLegacyStatusGate();
     bindPublicLiveGate();
     ui.form.addEventListener('submit', event => {
       event.preventDefault();
