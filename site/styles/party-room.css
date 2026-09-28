@@ -1,3 +1,98 @@
+.party-guest {
+  width: min(100%, 720px);
+  margin: 12px auto;
+  color: #f3f8ff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.party-guest[hidden],
+.party-room-dialog[hidden],
+.party-controls[hidden],
+.party-request-actions button[hidden] { display: none !important; }
+
+.party-guest-status {
+  min-height: 1.5em;
+  margin: 8px 0;
+  color: #cce7ff;
+  font-size: 14px;
+}
+
+.party-name-label {
+  display: grid;
+  gap: 6px;
+  color: #d8e9f8;
+  font-size: 13px;
+}
+
+.party-name-input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #47617d;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #0a111d;
+  color: #fff;
+  font: inherit;
+}
+
+.party-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.party-request-actions button,
+.party-join,
+.party-controls button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #4d718f;
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: #173654;
+  color: #f5fbff;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.party-raise,
+.party-join { background: #12694c !important; border-color: #36b583 !important; }
+.party-cancel,
+.party-control-hangup { background: #682735 !important; border-color: #b84c61 !important; }
+
+.party-room-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  overflow: hidden;
+  padding: max(12px, env(safe-area-inset-top)) 12px 0;
+  background: #050a12f7;
+}
+
+.party-room-title {
+  margin: 0;
+  color: #e9f7ff;
+  font-size: clamp(17px, 4vw, 24px);
+  text-align: center;
+}
+
+.party-grid-slot {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.party-control-microphone[aria-pressed='false'],
+.party-control-camera[aria-pressed='false'] {
+  border-color: #b84c61;
+  background: #421c28;
+}
+
 .party-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -114,6 +209,8 @@
   padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
   background: #0a111ded;
   backdrop-filter: blur(12px);
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .party-controls button { min-width: 44px; min-height: 44px; }
@@ -131,6 +228,9 @@
 @media (max-width: 380px) {
   .party-grid { gap: 6px; }
   .party-name { font-size: 11px; }
+  .party-room-dialog { padding-inline: 6px; }
+  .party-controls { gap: 5px; padding-inline: 6px; }
+  .party-controls button { flex: 1 1 44px; padding-inline: 7px; font-size: 11px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
