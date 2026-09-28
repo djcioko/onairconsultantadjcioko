@@ -26,7 +26,7 @@ function defaultSourceDir() {
 }
 
 function defaultOutputDir() {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'live-studio', 'mediapipe');
+  return resolve(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'studio', 'mediapipe');
 }
 
 export async function copyMediaPipeAssets({

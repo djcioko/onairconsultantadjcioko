@@ -4,5 +4,6 @@ module.exports = {
   build: {
     outDir: '../dist/studio',
     emptyOutDir: true,
+    sourcemap: false,
   },
 };
