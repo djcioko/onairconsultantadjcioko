@@ -138,6 +138,20 @@ function defaultCancelFrame(handle) {
   else globalThis.clearTimeout(handle);
 }
 
+function defaultSchedulePartyFrame(callback, delay) {
+  return globalThis.setTimeout(callback, delay);
+}
+
+function defaultCancelPartyFrame(handle) {
+  globalThis.clearTimeout(handle);
+}
+
+function partyMediaError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function defaultTrackFactories() {
   return {
     video: (track) => new LocalVideoTrack(track, track.getConstraints?.(), true),
@@ -412,6 +426,8 @@ export class ProgramStream {
     onStatus = NOOP,
     scheduleFrame = defaultScheduleFrame,
     cancelFrame = defaultCancelFrame,
+    schedulePartyFrame = defaultSchedulePartyFrame,
+    cancelPartyFrame = defaultCancelPartyFrame,
     trackFactories = defaultTrackFactories(),
   } = {}) {
     this.profile = validateProfile(profile);
@@ -426,6 +442,8 @@ export class ProgramStream {
     this.onStatus = onStatus;
     this.scheduleFrame = scheduleFrame;
     this.cancelFrame = cancelFrame;
+    this.schedulePartyFrame = schedulePartyFrame;
+    this.cancelPartyFrame = cancelPartyFrame;
     this.trackFactories = trackFactories;
 
     this.videoElement = this.videoFactory();
@@ -445,6 +463,8 @@ export class ProgramStream {
     this.roomClones = new Set();
     this.microphoneClones = new Set();
     this.audioWrappers = new Map();
+    this.partyTracks = new Map();
+    this.releasedPartyTracks = new WeakSet();
     this.facingMode = 'user';
     this.segmentationReady = false;
     this.segmentationPaused = false;
@@ -482,6 +502,7 @@ export class ProgramStream {
       || this.programCanvasTrack?.readyState === 'live'
       || this.standbyCanvasTrack?.readyState === 'live'
       || [...this.roomClones].some((track) => track.readyState === 'live')
+      || this.partyTracks.size > 0
     ) {
       throw new Error('Profile cannot change while preview or room tracks are active');
     }
@@ -798,6 +819,92 @@ export class ProgramStream {
     return {videoTrack, audioTrack};
   }
 
+  createPartyTracks({width = 960, height = 540, fps = 15} = {}) {
+    if (!this.microphoneSource || this.microphoneSource.readyState !== 'live'
+        || typeof this.microphoneSource.clone !== 'function') {
+      throw partyMediaError(
+        'PARTY_MICROPHONE_UNAVAILABLE',
+        'Microfonul gazdei nu este disponibil pentru camera cu invitați.',
+      );
+    }
+    this.assertReady();
+    if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isFinite(fps)
+        || width < 1 || height < 1 || fps <= 0
+        || width > 960 || height > 540 || fps > 15) {
+      throw new TypeError('Party media is limited to 960x540 at 15 fps');
+    }
+
+    const canvas = this.canvasFactory();
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', {alpha: false});
+    if (!context) throw partyMediaError('PARTY_VIDEO_UNAVAILABLE', 'Imaginea camerei nu poate fi pregătită.');
+    const record = {
+      tracks: null,
+      canvas,
+      context,
+      width,
+      height,
+      fps,
+      handle: null,
+      released: false,
+      rawVideo: null,
+      rawAudio: null,
+    };
+    const draw = () => {
+      record.handle = null;
+      if (record.released) return;
+      context.clearRect?.(0, 0, width, height);
+      context.drawImage(this.programCanvas, 0, 0, width, height);
+      if (!record.released) {
+        record.handle = this.schedulePartyFrame(draw, 1000 / fps);
+      }
+    };
+
+    try {
+      draw();
+      record.rawVideo = this.firstTrack(canvas.captureStream(fps), 'video');
+      record.rawAudio = this.microphoneSource.clone();
+      record.rawAudio.enabled = this.microphoneSource.enabled;
+      const tracks = {
+        videoTrack: this.trackFactories.video(record.rawVideo),
+        audioTrack: this.trackFactories.audio(record.rawAudio),
+      };
+      record.tracks = tracks;
+      this.partyTracks.set(tracks, record);
+      return tracks;
+    } catch (error) {
+      record.released = true;
+      if (record.handle != null) this.cancelPartyFrame(record.handle);
+      this.stopTrack(record.rawVideo);
+      this.stopTrack(record.rawAudio);
+      throw error;
+    }
+  }
+
+  releasePartyTracks(tracks) {
+    const record = this.partyTracks.get(tracks);
+    if (!record) {
+      if (this.releasedPartyTracks.has(tracks)) return;
+      throw new TypeError('Party tracks are not owned by this ProgramStream');
+    }
+    record.released = true;
+    if (record.handle != null) {
+      this.cancelPartyFrame(record.handle);
+      record.handle = null;
+    }
+    for (const [wrapper, raw] of [
+      [tracks.videoTrack, record.rawVideo],
+      [tracks.audioTrack, record.rawAudio],
+    ]) {
+      try { wrapper?.stop?.(); } catch { /* raw track cleanup follows */ }
+      if (raw?.readyState !== 'ended') this.stopTrack(raw);
+      else if (raw) this.stoppedTracks.add(raw);
+    }
+    this.partyTracks.delete(tracks);
+    this.releasedPartyTracks.add(tracks);
+  }
+
   createStandbyVideoTrack() {
     if (!this.standbyCanvasTrack || this.standbyCanvasTrack.readyState !== 'live') {
       throw new Error('Standby video is unavailable');
@@ -842,6 +949,10 @@ export class ProgramStream {
     return [...this.roomClones];
   }
 
+  debugPartyTracks() {
+    return [...this.partyTracks.keys()];
+  }
+
   stopTrack(track) {
     if (!track || this.stoppedTracks.has(track)) return;
     this.stoppedTracks.add(track);
@@ -855,6 +966,7 @@ export class ProgramStream {
     ++this.captureEpoch;
     this.state = 'stopping';
     this.cancelRenderLoop();
+    for (const tracks of [...this.partyTracks.keys()]) this.releasePartyTracks(tracks);
 
     const ownedTracks = new Set([
       ...this.roomClones,

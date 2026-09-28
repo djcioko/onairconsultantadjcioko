@@ -1,10 +1,18 @@
+import {Room} from 'livekit-client';
 import {LiveApi, friendlyError} from '../../site/src/live-api.js';
+import {createPartyApi} from '../../site/src/party-api.js';
+import {createPartyGrid} from '../../site/src/party-grid.js';
+import {loadOrCreatePartyBrowserKey} from '../../site/src/party-names.js';
+import '../../site/styles/party-room.css';
+import {createPartyHost, setPartyHostAvailability} from './party-host.js';
+import {createPartyMediaBridge} from './party-media.js';
 import {ProgramStream} from './program-stream.js';
 import {StudioRoomController, PrivateCallController} from './room-controller.js';
 
 const $ = id => document.getElementById(id);
 const api=new LiveApi();
 let bootstrap, media, controller, privateCall, busy=false, camera=false, facingMode='user', wakeLock, pollTimer, closing=false;
+let partyApi, partyHost, partyGrid, partyGridIdentity='', partyAvailability=false;
 const labels={OFFLINE:'OFF AIR',CONNECTING:'SE CONECTEAZĂ',LIVE:'● LIVE',RECONNECTING:'RECONECTARE',PRIVATE_STANDBY:'PAUZĂ PRIVATĂ',UNAVAILABLE:'INDISPONIBIL'};
 function message(text,error=false) { $('message').textContent=text; $('message').classList.toggle('error',error); }
 function refreshControls() {
@@ -16,6 +24,7 @@ function refreshControls() {
   $('flip').disabled=busy || !camera;
   $('retry-cut').disabled=busy || !camera;
   $('stop-camera').disabled=busy || !camera || active;
+  if($('party-open')) $('party-open').disabled=busy || !ready || !partyAvailability || ['opening','open','reconnecting'].includes(partyHost?.state.status);
 }
 async function requestWakeLock() {
   if(document.visibilityState!=='visible' || !controller?.room) return;
@@ -39,6 +48,62 @@ async function run(action) {
     if(error.code==='REAUTH_REQUIRED') { $('unlock').hidden=false; $('password').focus(); }
     if([401,403].includes(error.status) && !['REAUTH_REQUIRED','INVALID_PASSWORD'].includes(error.code)) await shutdown();
   } finally { busy=false; refreshControls(); }
+}
+function partyGridProxy() {
+  const methods=['applyRoster','attachTrack','detachTrack','setTrackState','setConnectionState','setConnectionQuality','setSpeaking','remove','clear'];
+  return Object.fromEntries(methods.map(method=>[method,(...args)=>partyGrid?.[method]?.(...args)]));
+}
+function resetPartyGrid(identity='') {
+  $('party-grid').replaceChildren();
+  partyGridIdentity=identity;
+  partyGrid=createPartyGrid({root:$('party-grid'),localIdentity:identity,onRemove:memberOrIdentity=>{
+    const participant=partyHost?.state.participants.find(value=>value.identity===memberOrIdentity || value.memberId===memberOrIdentity);
+    if(participant?.memberId) run(()=>partyHost.remove(participant.memberId));
+  }});
+}
+function renderParty(state=partyHost?.state) {
+  if(!state) return;
+  if(state.identity && state.identity!==partyGridIdentity) resetPartyGrid(state.identity);
+  $('party-occupancy').textContent=`${state.occupancy}/${state.capacity}`;
+  $('party-open').disabled=busy || !media?.isReady() || ['opening','open','reconnecting'].includes(state.status);
+  $('party-close').disabled=busy || !state.sessionId;
+  $('party-controls').hidden=!['open','reconnecting'].includes(state.status);
+  $('party-microphone').setAttribute('aria-pressed',String(state.microphoneEnabled));
+  $('party-camera').setAttribute('aria-pressed',String(state.cameraEnabled));
+  $('party-confirm').hidden=!state.confirmationRequired;
+  const messages={closed:'Camera cu invitați este închisă.',opening:'Se deschide camera cu invitați…',open:'Camera este deschisă pentru cereri.',reconnecting:'Se reface legătura camerei…',error:state.message || 'Camera cu invitați nu răspunde.'};
+  $('party-status').textContent=messages[state.status] || '';
+  const rows=state.requests.map(request=>{
+    const card=document.createElement('div'); card.className='request party-request';
+    const name=document.createElement('span'); name.textContent=request.displayName;
+    const countdown=document.createElement('small'); countdown.textContent=`${request.remainingSeconds}s`;
+    const accept=document.createElement('button'); accept.type='button'; accept.className='primary'; accept.textContent='Acceptă'; accept.disabled=state.acceptDisabled;
+    accept.addEventListener('click',()=>run(()=>partyHost.accept(request.requestId)));
+    const decline=document.createElement('button'); decline.type='button'; decline.textContent='Respinge';
+    decline.addEventListener('click',()=>run(()=>partyHost.decline(request.requestId)));
+    card.append(name,countdown,accept,decline); return card;
+  });
+  if(!rows.length) { const empty=document.createElement('p'); empty.className='empty'; empty.textContent='Nicio cerere momentan.'; rows.push(empty); }
+  $('party-requests').replaceChildren(...rows);
+}
+async function ensurePartyStudio() {
+  const browserKey=loadOrCreatePartyBrowserKey(localStorage);
+  if(!partyApi) partyApi=createPartyApi({csrf:bootstrap.csrf_token,browserKey});
+  let status;
+  try { status=await partyApi.getStatus(); }
+  catch { status={enabled:false}; }
+  partyAvailability=status.enabled===true;
+  setPartyHostAvailability({enabled:partyAvailability,panel:$('party-panel'),legacyPanel:$('legacy-private-panel')});
+  if(!partyAvailability || partyHost) return;
+  resetPartyGrid();
+  partyHost=createPartyHost({
+    api:partyApi,
+    grid:partyGridProxy(),
+    roomFactory:options=>new Room(options),
+    mediaBridge:createPartyMediaBridge({programStream:media}),
+    onState:renderParty,
+  });
+  renderParty();
 }
 function createStudio() {
   media=new ProgramStream({profile:bootstrap.profile,onStatus:(event)=>{
@@ -81,6 +146,7 @@ async function poll() {
     api.csrf=bootstrap.csrf_token;
     $('unlock').hidden=!!(bootstrap.remembered || bootstrap.recentReauth);
     if(!media) { createStudio(); state(bootstrap.state); message('Pornește camera, verifică imaginea, apoi apasă ON AIR.'); }
+    await ensurePartyStudio();
     renderRequests(bootstrap.requests);
     if(controller.room && controller.mode==='PRIVATE_STANDBY' && privateCall.id && !bootstrap.activePrivate) {
       await privateCall.dispose(); $('recover').hidden=false;
@@ -142,8 +208,15 @@ $('recover').addEventListener('click',()=>run(async()=>{
   privateCall.id ||= bootstrap.activePrivate?.id || bootstrap.resumePrivateId;
   await endPrivate();
 }));
+$('party-open').addEventListener('click',()=>run(()=>partyHost?.open()));
+$('party-close').addEventListener('click',()=>run(()=>partyHost?.close({confirmed:false})));
+$('party-confirm-yes').addEventListener('click',()=>run(()=>partyHost?.close({confirmed:true})));
+$('party-confirm-no').addEventListener('click',()=>{ $('party-confirm').hidden=true; });
+$('party-microphone').addEventListener('click',()=>run(()=>partyHost?.setMicrophoneEnabled(!partyHost.state.microphoneEnabled)));
+$('party-camera').addEventListener('click',()=>run(()=>partyHost?.setCameraEnabled(!partyHost.state.cameraEnabled)));
 async function shutdown() {
   closing=true; clearTimeout(pollTimer);
+  await partyHost?.destroy();
   await privateCall?.abort();
   try { await controller?.shutdown(); } catch { await media?.stop(); }
   wakeLock?.release().catch(()=>{}); wakeLock=null;
