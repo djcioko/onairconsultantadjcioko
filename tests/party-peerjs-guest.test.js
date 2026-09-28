@@ -157,7 +157,29 @@ function mediaStream() {
 }
 
 
-function fixture({storage = memoryStorage(), timers = manualTimers()} = {}) {
+function fixture({
+  storage = memoryStorage(),
+  timers = manualTimers(),
+  publicLive = 'playing',
+} = {}) {
+  let publicLivePlayer = null;
+  if (publicLive !== 'absent') {
+    publicLivePlayer = document.createElement('video');
+    publicLivePlayer.id = 'siteVideoPlayer';
+    Object.defineProperty(publicLivePlayer, 'paused', {
+      configurable: true, writable: true, value: true,
+    });
+    Object.defineProperty(publicLivePlayer, 'readyState', {
+      configurable: true, writable: true, value: 0,
+    });
+    publicLivePlayer.srcObject = null;
+    if (publicLive === 'playing') {
+      publicLivePlayer.srcObject = mediaStream();
+      publicLivePlayer.paused = false;
+      publicLivePlayer.readyState = 4;
+    }
+    document.body.append(publicLivePlayer);
+  }
   const root = document.createElement('section');
   root.dataset.partyLiveRoot = '';
   root.hidden = true;
@@ -181,6 +203,7 @@ function fixture({storage = memoryStorage(), timers = manualTimers()} = {}) {
     host: () => peer.connections.at(-1),
     mediaDevices,
     peer,
+    publicLivePlayer,
     root,
     states,
     storage,
@@ -220,6 +243,68 @@ beforeEach(() => {
 
 
 describe('PeerJS party request lifecycle', () => {
+  it('fails closed when the public LIVE player is missing', async () => {
+    const value = await connectedFixture({publicLive: 'absent'});
+    await value.host().emit('data', {type: 'party-status', open: true, capacity: 9, occupancy: 1});
+
+    expect(value.root.querySelector('[data-party-name]').disabled).toBe(true);
+    expect(value.root.querySelector('[data-party-raise]').disabled).toBe(true);
+    expect(value.root.querySelector('[data-party-status]').textContent)
+      .toBe('Ne vedem curând LIVE!');
+  });
+
+  it('locks name and hand raise without public LIVE, then unlocks and relocks with playback', async () => {
+    const value = await connectedFixture({publicLive: 'offline'});
+    await value.host().emit('data', {type: 'party-status', open: true, capacity: 9, occupancy: 1});
+    const input = value.root.querySelector('[data-party-name]');
+    const raise = value.root.querySelector('[data-party-raise]');
+    const status = value.root.querySelector('[data-party-status]');
+
+    expect(input.disabled).toBe(true);
+    expect(raise.disabled).toBe(true);
+    expect(status.textContent).toBe('Ne vedem curând LIVE!');
+    await expect(value.controller.raiseHand('Alex')).resolves.toBe(false);
+    expect(value.host().sent.filter(message => message.type === 'guest-request')).toHaveLength(0);
+
+    const liveStream = mediaStream();
+    value.publicLivePlayer.srcObject = liveStream;
+    value.publicLivePlayer.paused = false;
+    value.publicLivePlayer.readyState = 4;
+    value.publicLivePlayer.dispatchEvent(new Event('playing'));
+
+    expect(input.disabled).toBe(false);
+    expect(raise.disabled).toBe(false);
+    expect(status.textContent).toContain('deschisă');
+    await value.controller.raiseHand('Alex');
+    expect(value.controller.state.status).toBe('pending');
+
+    value.publicLivePlayer.srcObject = null;
+    value.publicLivePlayer.paused = true;
+    value.publicLivePlayer.readyState = 0;
+    value.publicLivePlayer.dispatchEvent(new Event('pause'));
+    await vi.waitFor(() => expect(value.controller.state.status).toBe('idle'));
+
+    expect(input.disabled).toBe(true);
+    expect(raise.disabled).toBe(true);
+    expect(status.textContent).toBe('Ne vedem curând LIVE!');
+    expect(value.controller.state.requestId).toBeNull();
+    expect(value.timers.delays).not.toContain(90_000);
+    expect(value.host().sent.filter(message => message.type === 'guest-left')).toHaveLength(1);
+  });
+
+  it('keeps requests available when the local player is paused but its LIVE track is active', async () => {
+    const value = await connectedFixture();
+    await value.host().emit('data', {type: 'party-status', open: true, capacity: 9, occupancy: 1});
+
+    value.publicLivePlayer.paused = true;
+    value.publicLivePlayer.readyState = 0;
+    value.publicLivePlayer.dispatchEvent(new Event('pause'));
+
+    expect(value.root.querySelector('[data-party-name]').disabled).toBe(false);
+    expect(value.root.querySelector('[data-party-raise]').disabled).toBe(false);
+    expect(value.root.querySelector('[data-party-status]').textContent).toContain('deschisă');
+  });
+
   it('shows the room as ready after the host answers the initial status request', async () => {
     const value = await connectedFixture();
 
@@ -300,6 +385,27 @@ describe('PeerJS party request lifecycle', () => {
       }),
     ]);
     expect(value.controller.state.requestId).toBe('request-1');
+  });
+
+  it('cancels a waiting request when LIVE ends and never resends it after reconnect', async () => {
+    const value = await connectedFixture();
+    await value.controller.raiseHand('Ana');
+    const first = value.host();
+    await first.emit('close');
+    expect(value.controller.state.status).toBe('waiting_host');
+
+    value.publicLivePlayer.srcObject = null;
+    value.publicLivePlayer.dispatchEvent(new Event('emptied'));
+    await vi.waitFor(() => expect(value.controller.state.requestId).toBeNull());
+
+    await value.timers.runNext();
+    const second = value.host();
+    await second.openNow();
+
+    expect(value.controller.state.status).toBe('idle');
+    expect(second.sent.filter(message => message.type === 'guest-request')).toHaveLength(0);
+    expect(value.root.querySelector('[data-party-status]').textContent)
+      .toBe('Ne vedem curând LIVE!');
   });
 
   it('rebinds an accepted guest with the same request without reacquiring media or redialing', async () => {

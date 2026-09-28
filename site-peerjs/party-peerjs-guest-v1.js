@@ -157,7 +157,7 @@ export function createPeerJsPartyGuest({
   const clientId = loadClientId(storage, clientIdFactory);
   let snapshot = {
     status: 'idle', requestId: null, clientId, peerId: '', name: '',
-    microphoneEnabled: true, cameraEnabled: true,
+    microphoneEnabled: true, cameraEnabled: true, liveAvailable: false,
   };
   let root = null;
   let ui = null;
@@ -171,6 +171,9 @@ export function createPeerJsPartyGuest({
   let mounted = false;
   let destroyed = false;
   let epoch = 0;
+  let publicLiveVideo = null;
+  let publicLiveTrack = null;
+  const publicLiveCleanups = [];
   const roster = new Map();
   const calls = new Map();
   const tiles = new Map();
@@ -185,15 +188,71 @@ export function createPeerJsPartyGuest({
 
   function render() {
     if (!ui) return;
-    ui.status.textContent = statusCopy(snapshot.status);
+    const liveLocked = snapshot.liveAvailable === false && snapshot.status !== 'joined';
+    ui.status.textContent = liveLocked ? 'Ne vedem curând LIVE!' : statusCopy(snapshot.status);
     const pending = ['pending', 'accepted', 'joining', 'joined'].includes(snapshot.status);
-    ui.raise.disabled = pending;
-    ui.input.disabled = pending;
+    ui.raise.disabled = pending || liveLocked;
+    ui.input.disabled = pending || liveLocked;
     ui.controls.hidden = snapshot.status !== 'joined';
     ui.microphone.setAttribute('aria-pressed', String(snapshot.microphoneEnabled));
     ui.camera.setAttribute('aria-pressed', String(snapshot.cameraEnabled));
     ui.microphone.textContent = snapshot.microphoneEnabled ? '🎙 Microfon' : '🔇 Microfon oprit';
     ui.camera.textContent = snapshot.cameraEnabled ? '📹 Cameră' : '🚫 Cameră oprită';
+  }
+
+  function publicLiveIsPlaying() {
+    if (!publicLiveVideo) return false;
+    const stream = publicLiveVideo.srcObject;
+    const tracks = stream?.getVideoTracks?.() ?? [];
+    return tracks.some(track => (
+      track.readyState === 'live'
+      && track.enabled !== false
+      && track.muted !== true
+    ));
+  }
+
+  function bindPublicLiveTrack() {
+    const nextTrack = publicLiveVideo?.srcObject?.getVideoTracks?.()[0] ?? null;
+    if (nextTrack === publicLiveTrack) return;
+    publicLiveTrack = nextTrack;
+    if (!nextTrack?.addEventListener) return;
+    for (const eventName of ['mute', 'unmute', 'ended']) {
+      nextTrack.addEventListener(eventName, syncPublicLiveAvailability);
+      publicLiveCleanups.push(() => {
+        nextTrack.removeEventListener?.(eventName, syncPublicLiveAvailability);
+      });
+    }
+  }
+
+  function syncPublicLiveAvailability() {
+    bindPublicLiveTrack();
+    const liveAvailable = publicLiveIsPlaying();
+    if (snapshot.liveAvailable !== liveAvailable) emit({liveAvailable});
+    if (
+      !liveAvailable
+      && snapshot.requestId
+      && ['pending', 'waiting_host', 'accepted', 'joining'].includes(snapshot.status)
+    ) {
+      void leave({notify: true, finalStatus: 'idle'});
+    }
+  }
+
+  function bindPublicLiveGate() {
+    publicLiveVideo = root?.ownerDocument?.getElementById('siteVideoPlayer') ?? null;
+    if (!publicLiveVideo) return;
+    for (const eventName of ['playing', 'play', 'pause', 'ended', 'emptied', 'abort']) {
+      publicLiveVideo.addEventListener(eventName, syncPublicLiveAvailability);
+      publicLiveCleanups.push(() => {
+        publicLiveVideo?.removeEventListener(eventName, syncPublicLiveAvailability);
+      });
+    }
+    syncPublicLiveAvailability();
+  }
+
+  function unbindPublicLiveGate() {
+    while (publicLiveCleanups.length) publicLiveCleanups.pop()();
+    publicLiveTrack = null;
+    publicLiveVideo = null;
   }
 
   function clearRequestTimer() {
@@ -246,6 +305,11 @@ export function createPeerJsPartyGuest({
   function bindHost(connection) {
     connection.on('open', () => {
       if (connection !== hostConnection) return;
+      if (snapshot.liveAvailable === false) {
+        if (snapshot.requestId) void leave({notify: true, finalStatus: 'idle'});
+        else safeSend(connection, message('party-status-request'));
+        return;
+      }
       if (snapshot.status === 'pending' || snapshot.status === 'waiting_host') {
         emit({status: 'pending'});
         sendRequest();
@@ -635,6 +699,7 @@ export function createPeerJsPartyGuest({
   }
 
   function raiseHand(value) {
+    if (snapshot.liveAvailable === false) return Promise.resolve(false);
     if (['pending', 'accepted', 'joining', 'joined'].includes(snapshot.status)) {
       return Promise.resolve(false);
     }
@@ -682,6 +747,7 @@ export function createPeerJsPartyGuest({
     if (reconnectTimer != null) timers.clearTimeout(reconnectTimer);
     reconnectTimer = null;
     pageWindow?.removeEventListener?.('pagehide', pageHide);
+    unbindPublicLiveGate();
     await leave({notify: true});
     safeClose(hostConnection);
     hostConnection = null;
@@ -701,6 +767,7 @@ export function createPeerJsPartyGuest({
     ui = renderShell(root, readNames(storage));
     root.hidden = false;
     root.dataset.partyPeerjsMounted = 'true';
+    bindPublicLiveGate();
     ui.form.addEventListener('submit', event => {
       event.preventDefault();
       void raiseHand(ui.input.value);

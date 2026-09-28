@@ -211,6 +211,7 @@ async function waitForMicrophone() {
 function createPeerPartyHostState({
     maxGuests = 8,
     expiryMs = 60000,
+    initialPeerStatus = 'online',
     now = () => Date.now(),
     setTimer = (callback, delay) =>
         setTimeout(callback, delay),
@@ -224,8 +225,14 @@ function createPeerPartyHostState({
     const pending = new Map();
     const accepted = new Map();
     const active = new Map();
-    let roomOpen = true;
+    let peerStatus = initialPeerStatus;
+    let roomRequestedOpen = true;
+    let roomOpen = peerStatus === 'online';
     let order = 0;
+
+    function ownsStablePeerId() {
+        return peerStatus === 'online';
+    }
 
     function cleanText(value, maxLength = 80) {
         return String(value || '')
@@ -272,6 +279,8 @@ function createPeerPartyHostState({
     function snapshot() {
         return {
             roomOpen,
+            peerStatus,
+            peerReady: ownsStablePeerId(),
             capacity: maxGuests + 1,
             occupancy:
                 1 + accepted.size + active.size,
@@ -656,13 +665,18 @@ function createPeerPartyHostState({
     function attachConnection(connection) {
         if (
             !connection ||
-            connection.label !== 'guest-request'
+            connection.label !== 'guest-request' ||
+            !ownsStablePeerId()
         ) {
             return false;
         }
 
         connection.on('data', message => {
-            if (!message || typeof message !== 'object') {
+            if (
+                !ownsStablePeerId() ||
+                !message ||
+                typeof message !== 'object'
+            ) {
                 return;
             }
 
@@ -828,8 +842,14 @@ function createPeerPartyHostState({
 
         if (
             !call ||
+            !ownsStablePeerId() ||
             metadata.type !== 'guest-chat'
         ) {
+            if (call && !ownsStablePeerId()) {
+                try {
+                    call.close();
+                } catch (_) {}
+            }
             return false;
         }
 
@@ -932,6 +952,7 @@ function createPeerPartyHostState({
     }
 
     function closeRoom() {
+        roomRequestedOpen = false;
         roomOpen = false;
         const records = [
             ...pending.values(),
@@ -961,8 +982,38 @@ function createPeerPartyHostState({
     }
 
     function openRoom() {
-        roomOpen = true;
+        roomRequestedOpen = true;
+        roomOpen = ownsStablePeerId();
         broadcastRoster();
+        notifyRender();
+        return true;
+    }
+
+    function setPeerStatus(status) {
+        if (
+            status !== 'connecting' &&
+            status !== 'online' &&
+            status !== 'reconnecting' &&
+            status !== 'unavailable'
+        ) {
+            return false;
+        }
+
+        if (
+            peerStatus === 'unavailable' &&
+            status === 'reconnecting'
+        ) {
+            return false;
+        }
+
+        peerStatus = status;
+        roomOpen = ownsStablePeerId() &&
+            roomRequestedOpen;
+
+        if (roomOpen) {
+            broadcastRoster();
+        }
+
         notifyRender();
         return true;
     }
@@ -991,8 +1042,48 @@ function createPeerPartyHostState({
         removeParticipant,
         closeRoom,
         openRoom,
+        setPeerStatus,
+        ownsStablePeerId,
         refresh,
         destroy
+    };
+}
+
+
+function createPeerPartyHostUiModel(state) {
+    const peerStatus = state.peerStatus || 'online';
+    const peerReady =
+        peerStatus === 'online' &&
+        state.peerReady !== false;
+    let statusText;
+    let badgeText;
+
+    if (peerStatus === 'unavailable') {
+        statusText =
+            'DJCIOKOSTUDIO este deja deschisă în altă filă. Închide cealaltă filă și reîncarcă pagina.';
+        badgeText = 'DEJA DESCHISĂ';
+    } else if (peerStatus === 'reconnecting') {
+        statusText =
+            'Conexiunea PeerJS s-a întrerupt. Se reconectează…';
+        badgeText = 'PEERJS RECONECTARE';
+    } else if (!peerReady) {
+        statusText = 'Se conectează la PeerJS…';
+        badgeText = 'PEERJS CONECTARE';
+    } else {
+        statusText = state.roomOpen
+            ? 'PeerJS conectat. Camera este deschisă pentru cereri.'
+            : 'PeerJS conectat. Camera este închisă.';
+        badgeText = 'PEERJS ONLINE';
+    }
+
+    return {
+        statusText,
+        badgeText,
+        openButtonDisabled:
+            !peerReady || state.roomOpen,
+        closeButtonDisabled:
+            !peerReady || !state.roomOpen,
+        requestControlsDisabled: !peerReady
     };
 }
 
@@ -1047,10 +1138,10 @@ function ensurePeerPartyHostUi() {
         <strong>LIVE CU INVITAȚI · PEERJS</strong>
         <span class="dj-party-count" id="djPeerPartyCount">1/9</span>
       </div>
-      <p class="dj-party-status" id="djPeerPartyStatus" aria-live="polite">Camera este deschisă.</p>
+      <p class="dj-party-status" id="djPeerPartyStatus" aria-live="polite">Se conectează la PeerJS…</p>
       <div class="dj-party-actions">
         <button type="button" id="djPeerPartyOpen" disabled>Deschide camera</button>
-        <button type="button" id="djPeerPartyClose" class="dj-party-close">Închide camera</button>
+        <button type="button" id="djPeerPartyClose" class="dj-party-close" disabled>Închide camera</button>
       </div>
       <div class="dj-party-requests" id="djPeerPartyRequests"></div>
       <div class="dj-party-grid" id="djPeerPartyGrid" aria-label="Invitați conectați"></div>
@@ -1109,6 +1200,7 @@ function ensurePeerPartyHostUi() {
 
 function renderPeerPartyHostState(state) {
     const root = ensurePeerPartyHostUi();
+    const uiModel = createPeerPartyHostUiModel(state);
     const count = root.querySelector(
         '#djPeerPartyCount'
     );
@@ -1130,11 +1222,18 @@ function renderPeerPartyHostState(state) {
 
     count.textContent =
         `${state.occupancy}/${state.capacity}`;
-    status.textContent = state.roomOpen
-        ? 'Camera este deschisă pentru cereri.'
-        : 'Camera este închisă.';
-    openButton.disabled = state.roomOpen;
-    closeButton.disabled = !state.roomOpen;
+    status.textContent = uiModel.statusText;
+    openButton.disabled = uiModel.openButtonDisabled;
+    closeButton.disabled = uiModel.closeButtonDisabled;
+    root.dataset.peerStatus = state.peerStatus;
+
+    const headerBadge = document.querySelector(
+        '[data-peer-host-status]'
+    );
+
+    if (headerBadge) {
+        headerBadge.textContent = uiModel.badgeText;
+    }
 
     requests.replaceChildren();
 
@@ -1156,6 +1255,7 @@ function renderPeerPartyHostState(state) {
             accept.type = 'button';
             accept.textContent = 'Acceptă';
             accept.disabled =
+                uiModel.requestControlsDisabled ||
                 state.occupancy >= state.capacity;
             accept.addEventListener(
                 'click',
@@ -1167,6 +1267,8 @@ function renderPeerPartyHostState(state) {
             reject.type = 'button';
             reject.className = 'reject';
             reject.textContent = 'Respinge';
+            reject.disabled =
+                uiModel.requestControlsDisabled;
             reject.addEventListener(
                 'click',
                 () => peerPartyHost?.declineRequest(
@@ -1216,6 +1318,8 @@ function renderPeerPartyHostState(state) {
         remove.type = 'button';
         remove.className = 'dj-party-remove';
         remove.textContent = 'Elimină';
+        remove.disabled =
+            uiModel.requestControlsDisabled;
         remove.setAttribute(
             'aria-label',
             `Elimină ${entry.name}`
@@ -2064,6 +2168,37 @@ async function handleGuestMediaCall(
    PEERJS
    ========================================================= */
 
+function attachPeerPartyHostLifecycle(
+    peer,
+    host,
+    {
+        onOpen = () => {},
+        onDisconnected = () => {},
+        onError = () => {}
+    } = {}
+) {
+    peer.on('open', id => {
+        host.setPeerStatus('online');
+        onOpen(id);
+    });
+
+    peer.on('disconnected', () => {
+        host.setPeerStatus('reconnecting');
+        onDisconnected();
+    });
+
+    peer.on('error', error => {
+        if (
+            error &&
+            error.type === 'unavailable-id'
+        ) {
+            host.setPeerStatus('unavailable');
+        }
+
+        onError(error);
+    });
+}
+
 function initStudioBroadcast() {
 
     if (
@@ -2104,6 +2239,7 @@ function initStudioBroadcast() {
 
     peerPartyHost =
         createPeerPartyHostState({
+            initialPeerStatus: 'connecting',
             render: renderPeerPartyHostState,
             getHostState: () => ({
                 mic:
@@ -2123,21 +2259,41 @@ function initStudioBroadcast() {
             'djcioko-studio-unic-id'
         );
 
+    attachPeerPartyHostLifecycle(
+        peerLive,
+        peerPartyHost,
+        {
+            onOpen: id => {
+                console.log(
+                    'Studioul este online pe ID-ul: ' +
+                    id
+                );
 
-    peerLive.on(
-        'open',
-        id => {
-            console.log(
-                'Studioul este online pe ID-ul: ' +
-                id
-            );
-
-            if (
-                typeof showToast ===
-                'function'
-            ) {
-                showToast(
-                    'Studiu conectat pentru transmisie directă!'
+                if (
+                    typeof showToast ===
+                    'function'
+                ) {
+                    showToast(
+                        'Studiu conectat pentru transmisie directă!'
+                    );
+                }
+            },
+            onDisconnected: () => {
+                try {
+                    if (!peerLive.destroyed) {
+                        peerLive.reconnect();
+                    }
+                } catch (error) {
+                    console.warn(
+                        '[PARTY] Reconectarea PeerJS a eșuat:',
+                        error
+                    );
+                }
+            },
+            onError: err => {
+                console.error(
+                    'Erore PeerJS:',
+                    err
                 );
             }
         }
@@ -2152,6 +2308,16 @@ function initStudioBroadcast() {
     peerLive.on(
         'connection',
         connection => {
+
+            if (
+                !peerPartyHost.ownsStablePeerId()
+            ) {
+                try {
+                    connection.close();
+                } catch (_) {}
+
+                return;
+            }
 
             if (
                 connection.label ===
@@ -2185,6 +2351,16 @@ function initStudioBroadcast() {
     peerLive.on(
         'call',
         async call => {
+
+            if (
+                !peerPartyHost.ownsStablePeerId()
+            ) {
+                try {
+                    call.close();
+                } catch (_) {}
+
+                return;
+            }
 
             const metadata =
                 call.metadata || {};
@@ -2236,32 +2412,6 @@ function initStudioBroadcast() {
     );
 
 
-    peerLive.on(
-        'disconnected',
-        () => {
-            try {
-                if (!peerLive.destroyed) {
-                    peerLive.reconnect();
-                }
-            } catch (error) {
-                console.warn(
-                    '[PARTY] Reconectarea PeerJS a eșuat:',
-                    error
-                );
-            }
-        }
-    );
-
-
-    peerLive.on(
-        'error',
-        err => {
-            console.error(
-                'Erore PeerJS:',
-                err
-            );
-        }
-    );
 }
 
 

@@ -74,6 +74,21 @@ class FakeCall {
   }
 }
 
+class FakePeerEvents {
+  constructor() {
+    this.handlers = new Map();
+  }
+
+  on(eventName, handler) {
+    if (!this.handlers.has(eventName)) this.handlers.set(eventName, []);
+    this.handlers.get(eventName).push(handler);
+  }
+
+  emit(eventName, value) {
+    for (const handler of this.handlers.get(eventName) || []) handler(value);
+  }
+}
+
 function createFakeClock() {
   let current = 1_000;
   let sequence = 0;
@@ -183,6 +198,103 @@ test('party host reports room availability before a spectator raises a hand', ()
   assert.deepEqual(plain(connection.sent.at(-1)), {
     type: 'party-status', open: true, capacity: 9, occupancy: 1,
   });
+});
+
+test('party host ignores guest traffic until it owns the stable PeerJS ID', () => {
+  const context = loadStreamScript();
+  const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});
+  const beforeOpen = new FakeConnection('guest-request');
+
+  assert.equal(host.snapshot().peerStatus, 'connecting');
+  assert.equal(host.snapshot().peerReady, false);
+  assert.equal(host.snapshot().roomOpen, false);
+  assert.equal(host.attachConnection(beforeOpen), false);
+  beforeOpen.emit('data', {type: 'party-status-request'});
+  assert.equal(beforeOpen.sent.length, 0);
+
+  host.setPeerStatus('online');
+  const owned = new FakeConnection('guest-request');
+  assert.equal(host.attachConnection(owned), true);
+  owned.emit('data', {type: 'party-status-request'});
+  assert.deepEqual(plain(owned.sent.at(-1)), {
+    type: 'party-status', open: true, capacity: 9, occupancy: 1,
+  });
+
+  host.setPeerStatus('reconnecting');
+  assert.equal(host.snapshot().peerReady, false);
+  assert.equal(host.snapshot().roomOpen, false);
+  const duringReconnect = new FakeConnection('guest-request');
+  assert.equal(host.attachConnection(duringReconnect), false);
+  owned.emit('data', {type: 'party-status-request'});
+  assert.equal(owned.sent.length, 1);
+});
+
+test('party host UI model disables controls and explains PeerJS ownership states', () => {
+  const context = loadStreamScript();
+  const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});
+
+  assert.deepEqual(plain(context.createPeerPartyHostUiModel(host.snapshot())), {
+    statusText: 'Se conectează la PeerJS…',
+    badgeText: 'PEERJS CONECTARE',
+    openButtonDisabled: true,
+    closeButtonDisabled: true,
+    requestControlsDisabled: true,
+  });
+
+  host.setPeerStatus('online');
+  assert.deepEqual(plain(context.createPeerPartyHostUiModel(host.snapshot())), {
+    statusText: 'PeerJS conectat. Camera este deschisă pentru cereri.',
+    badgeText: 'PEERJS ONLINE',
+    openButtonDisabled: true,
+    closeButtonDisabled: false,
+    requestControlsDisabled: false,
+  });
+
+  host.setPeerStatus('reconnecting');
+  assert.deepEqual(plain(context.createPeerPartyHostUiModel(host.snapshot())), {
+    statusText: 'Conexiunea PeerJS s-a întrerupt. Se reconectează…',
+    badgeText: 'PEERJS RECONECTARE',
+    openButtonDisabled: true,
+    closeButtonDisabled: true,
+    requestControlsDisabled: true,
+  });
+
+  host.setPeerStatus('unavailable');
+  assert.deepEqual(plain(context.createPeerPartyHostUiModel(host.snapshot())), {
+    statusText: 'DJCIOKOSTUDIO este deja deschisă în altă filă. Închide cealaltă filă și reîncarcă pagina.',
+    badgeText: 'DEJA DESCHISĂ',
+    openButtonDisabled: true,
+    closeButtonDisabled: true,
+    requestControlsDisabled: true,
+  });
+});
+
+test('PeerJS lifecycle events drive the host ownership state', () => {
+  const context = loadStreamScript();
+  const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});
+  const peer = new FakePeerEvents();
+  const observed = [];
+
+  context.attachPeerPartyHostLifecycle(peer, host, {
+    onOpen: (id) => observed.push(`open:${id}`),
+    onDisconnected: () => observed.push('disconnected'),
+    onError: (error) => observed.push(`error:${error.type}`),
+  });
+
+  peer.emit('open', 'djcioko-studio-unic-id');
+  assert.equal(host.snapshot().peerStatus, 'online');
+  peer.emit('disconnected');
+  assert.equal(host.snapshot().peerStatus, 'reconnecting');
+  peer.emit('error', {type: 'unavailable-id'});
+  assert.equal(host.snapshot().peerStatus, 'unavailable');
+  peer.emit('disconnected');
+  assert.equal(host.snapshot().peerStatus, 'unavailable');
+  assert.deepEqual(observed, [
+    'open:djcioko-studio-unic-id',
+    'disconnected',
+    'error:unavailable-id',
+    'disconnected',
+  ]);
 });
 
 test('party host deduplicates reconnecting named requests and expires the latest request after 60 seconds', () => {
