@@ -1,7 +1,7 @@
 # DJCIOKOSTUDIO Multiparty Live Room Design
 
 **Date:** 2026-09-28  
-**Status:** Conversational design approved; written specification awaiting review  
+**Status:** Approved by the user on 2026-09-28
 **Frontend repository:** `djcioko/onairconsultantadjcioko`  
 **Capacity:** 9 participants total: 1 host and at most 8 accepted guests
 
