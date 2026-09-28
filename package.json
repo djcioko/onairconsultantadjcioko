@@ -1,0 +1,23 @@
+{
+  "name": "djcioko-multiparty-live",
+  "private": true,
+  "scripts": {
+    "test:legacy": "node --test tests/stream.test.js tests/site-viewer-presence.test.js",
+    "test": "vitest run",
+    "assets:mediapipe": "node scripts/copy-mediapipe-assets.mjs",
+    "build:studio": "vite build --config vite.studio.config.js && npm run assets:mediapipe",
+    "build:party": "vite build --config vite.party.config.js",
+    "build:release": "npm run build:studio && npm run build:party && node scripts/assemble-party-release.mjs",
+    "test:browser": "playwright test --config=playwright.party.config.js"
+  },
+  "dependencies": {
+    "@mediapipe/selfie_segmentation": "0.1.1675465747",
+    "livekit-client": "2.22.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "jsdom": "30.1.1",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}
