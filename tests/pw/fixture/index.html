@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>DJCIOKOSTUDIO — verificare multiparty</title>
+    <script type="module" src="/tests/pw/fixture/party-app.js"></script>
+  </head>
+  <body>
+    <main>
+      <section class="public-live" aria-label="LIVE public existent" data-public-live>
+        <strong>LIVE public</strong>
+        <span data-public-status role="status">Conectat</span>
+        <span><output data-public-viewers>3</output> spectatori</span>
+        <button type="button" data-public-reconnect>Reconectează LIVE public</button>
+      </section>
+
+      <section class="host-panel" aria-label="Panou gazdă">
+        <header>
+          <h1>Camera LIVE cu invitați</h1>
+          <output data-host-occupancy aria-label="Participanți">0/9</output>
+        </header>
+        <p data-host-status role="status">Camera este închisă.</p>
+        <div class="host-actions">
+          <button type="button" data-host-open>Deschide camera</button>
+          <button type="button" data-host-close disabled>Închide camera</button>
+          <button type="button" data-host-microphone aria-pressed="true" disabled>Microfon gazdă</button>
+          <button type="button" data-host-camera aria-pressed="true" disabled>Cameră gazdă</button>
+        </div>
+        <h2>Cereri</h2>
+        <div data-host-requests><p>Nicio cerere momentan.</p></div>
+        <h2>Participanți</h2>
+        <section class="party-grid" data-host-grid aria-label="Grila video a gazdei"></section>
+        <section class="host-confirm" data-host-confirm role="alertdialog" aria-modal="true" aria-labelledby="host-confirm-title" hidden>
+          <h2 id="host-confirm-title">Închizi camera pentru toți?</h2>
+          <button type="button" data-host-confirm-yes>Da, închide</button>
+          <button type="button" data-host-confirm-no>Nu</button>
+        </section>
+      </section>
+
+      <section class="guest-lab" aria-label="Spectatori de verificare">
+        <button type="button" data-add-guest>Adaugă spectator</button>
+        <div data-guests></div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -521,10 +521,10 @@ export function createPartyGuest({
     const raise = makeElement(document, 'button', 'party-raise', 'Ridică mâna');
     raise.type = 'button';
     raise.dataset.partyAction = 'raise';
-    const join = makeElement(document, 'button', 'party-join', 'Intră în cameră');
-    join.type = 'button';
-    join.dataset.partyAction = 'join';
-    join.hidden = true;
+    const joinButton = makeElement(document, 'button', 'party-join', 'Intră în cameră');
+    joinButton.type = 'button';
+    joinButton.dataset.partyAction = 'join';
+    joinButton.hidden = true;
     const cancel = makeElement(document, 'button', 'party-cancel', 'Anulează cererea');
     cancel.type = 'button';
     cancel.dataset.partyAction = 'cancel';
@@ -561,15 +561,15 @@ export function createPartyGuest({
     resume.setAttribute('aria-label', 'Pornește redarea sunetului și a imaginii');
     resume.hidden = true;
     controls.append(microphone, camera, resume, hangup);
-    dialog.append(title, join, gridSlot, controls);
+    dialog.append(title, joinButton, gridSlot, controls);
     rootElement.append(status, label, names, actions, dialog);
     ui = {
-      status, label, name, names, actions, raise, join, cancel,
+      status, label, name, names, actions, raise, join: joinButton, cancel,
       dialog, title, gridSlot, controls, microphone, camera, hangup, resume,
     };
     updateNameOptions();
     raise.addEventListener('click', () => { void raiseHand(name.value); });
-    join.addEventListener('click', () => { void join(); });
+    joinButton.addEventListener('click', () => { void join(); });
     cancel.addEventListener('click', () => { void leave(); });
     microphone.addEventListener('click', () => {
       void setMicrophoneEnabled(snapshot.microphoneEnabled === false);

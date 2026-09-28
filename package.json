@@ -8,7 +8,8 @@
     "build:studio": "vite build --config vite.studio.config.js && npm run assets:mediapipe",
     "build:party": "vite build --config vite.party.config.js",
     "build:release": "npm run build:studio && npm run build:party && node scripts/assemble-party-release.mjs",
-    "test:browser": "playwright test --config=playwright.party.config.js"
+    "test:browser": "playwright test --config=playwright.party.config.js",
+    "test:transport": "playwright test --config=playwright.party-transport.config.js"
   },
   "dependencies": {
     "@mediapipe/selfie_segmentation": "0.1.1675465747",
