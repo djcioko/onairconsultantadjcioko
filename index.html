@@ -14,6 +14,7 @@ button,input{font-family:inherit}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line)}
 .logo{letter-spacing:.16em;font-size:13px;color:var(--blue2);font-weight:bold}
 .status-group{display:flex;align-items:center;gap:7px}
+.peer-host-status{display:inline-flex;align-items:center;border:1px solid #2a5570;background:#0c2230;color:var(--blue2);font-size:9px;padding:4px 7px;border-radius:20px;font-weight:bold;letter-spacing:.05em;white-space:nowrap}
 .viewer-counter{display:inline-flex;align-items:center;gap:4px;border:1px solid #2a5570;background:#0c2230;color:var(--blue2);font-size:10px;padding:4px 8px;border-radius:20px;font-weight:bold;letter-spacing:.05em;white-space:nowrap}
 .live-badge{background:#c1392b;color:#fff;font-size:10px;padding:4px 10px;border-radius:20px;font-weight:bold;letter-spacing:.1em;display:none}
 .live-badge.active{display:inline-block;animation:pulse 1.5s infinite}
@@ -44,7 +45,7 @@ h1{font-size:18px;font-weight:500;color:var(--blue2);margin-bottom:4px;text-alig
   <header class="topbar">
     <div class="logo">DJCIOKOSTUDIO</div>
     <div class="status-group">
-      <a href="/admin/live-studio/" aria-label="Deschide studioul securizat">STUDIO SECURIZAT</a>
+      <span class="peer-host-status" data-peer-host-status>PEERJS GAZDĂ</span>
       <span class="viewer-counter" aria-live="polite">👥 <span id="viewerCount">0</span> ONLINE</span>
       <span class="live-badge" id="topLiveBadge">ON AIR LIVE</span>
     </div>
@@ -432,6 +433,6 @@ document.getElementById('recBtn').addEventListener('click', () => {
 initMediaPipe();
 requestAnimationFrame(renderLoop);
 </script> 
-<script src="stream.js?v=guest-chat-v1"></script>
+<script src="stream.js?v=party-peerjs-v2"></script>
 </body>
 </html>

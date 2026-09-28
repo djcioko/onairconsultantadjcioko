@@ -37,11 +37,12 @@ describe('deterministic party release', () => {
     expect(existsSync(resolve('dist/studio/mediapipe/selfie_segmentation.js'))).toBe(true);
   });
 
-  it('preserves public PeerJS sources and adds only a same-origin studio link', () => {
-    expect(hash(resolve('stream.js'))).toBe('a826ee44edbde92b38bdede9b627f6d2ac23450cf16a3d6c36311ac293a07cca');
+  it('tracks the approved PeerJS host and keeps GitHub Pages self-contained', () => {
+    expect(hash(resolve('stream.js'))).toBe('941c2a29812dbeb79c03cd402d517a2df8c295b11547801d7b94de00373bb8da');
     expect(hash(resolve('site-viewer-presence.js'))).toBe('ea1fd7f3c73b5cad353efc5323382b106888e4387d3242f4006c1c7dcafef3d9');
     const html = readFileSync(resolve('index.html'), 'utf8');
-    expect(html).toContain('href="/admin/live-studio/"');
+    expect(html).toContain('data-peer-host-status');
+    expect(html).not.toContain('href="/admin/live-studio/"');
     expect(html).not.toContain('/api/admin/live/party/');
   });
 });
