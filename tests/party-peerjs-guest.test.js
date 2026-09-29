@@ -56,6 +56,16 @@ class FakeCall extends Emitter {
     this.peer = peer;
     this.localStream = stream;
     this.metadata = options.metadata ?? {};
+    this.senderUpdates = [];
+    this.peerConnection = {
+      getSenders: () => (stream?.getTracks?.() ?? []).map(track => ({
+        track,
+        getParameters: () => ({encodings: [{}]}),
+        setParameters: vi.fn(async parameters => {
+          this.senderUpdates.push({kind: track.kind, parameters});
+        }),
+      })),
+    };
     this.answer = vi.fn();
     this.close = vi.fn();
   }
@@ -135,6 +145,7 @@ function manualTimers() {
 function mediaTrack(kind) {
   return {
     kind,
+    contentHint: '',
     enabled: true,
     readyState: 'live',
     stop: vi.fn(function stop() {
@@ -162,6 +173,7 @@ function fixture({
   timers = manualTimers(),
   publicLive = 'playing',
   legacyStatus = null,
+  getUserMedia = null,
 } = {}) {
   let legacyStatusText = null;
   if (legacyStatus !== null) {
@@ -194,7 +206,9 @@ function fixture({
   document.body.append(root);
   const peer = new FakePeer();
   const stream = mediaStream();
-  const mediaDevices = {getUserMedia: vi.fn(async () => stream)};
+  const mediaDevices = {
+    getUserMedia: getUserMedia ?? vi.fn(async () => stream),
+  };
   const states = [];
   const controller = createPeerJsPartyGuest({
     peerFactory: () => peer,
@@ -472,17 +486,91 @@ describe('PeerJS party request lifecycle', () => {
 
 
 describe('PeerJS party media and mesh', () => {
-  it('captures bounded 540p media after acceptance and starts the verified host call', async () => {
+  it('uses only the party tile for host audio from acceptance until leave', async () => {
+    let releaseCapture;
+    const capture = new Promise(resolve => { releaseCapture = resolve; });
+    const value = await connectedFixture({
+      getUserMedia: vi.fn(() => capture),
+    });
+    value.publicLivePlayer.muted = false;
+    value.publicLivePlayer.defaultMuted = false;
+    value.publicLivePlayer.volume = 0.35;
+
+    await value.controller.raiseHand('Ana');
+    const accepting = value.host().emit('data', {
+      type: 'guest-accepted',
+      requestId: 'request-1',
+      clientId: 'client-1',
+    });
+
+    expect(value.controller.state.status).toBe('accepted');
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    releaseCapture(value.stream);
+    await accepting;
+    expect(value.controller.state.status).toBe('joined');
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    value.publicLivePlayer.muted = false;
+    value.publicLivePlayer.dispatchEvent(new Event('volumechange'));
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
+    await hostCall.emit('stream', mediaStream());
+    expect(value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"] video').muted)
+      .toBe(false);
+
+    await value.controller.leave();
+    expect(value.publicLivePlayer.muted).toBe(false);
+    expect(value.publicLivePlayer.defaultMuted).toBe(false);
+    expect(value.publicLivePlayer.volume).toBe(0.35);
+  });
+
+  it('keeps public LIVE muted when host control reconnects during accepted media permission', async () => {
+    let releaseCapture;
+    const capture = new Promise(resolve => { releaseCapture = resolve; });
+    const value = await connectedFixture({
+      getUserMedia: vi.fn(() => capture),
+    });
+    value.publicLivePlayer.muted = false;
+
+    await value.controller.raiseHand('Ana');
+    const firstHost = value.host();
+    const accepting = firstHost.emit('data', {
+      type: 'guest-accepted',
+      requestId: 'request-1',
+      clientId: 'client-1',
+    });
+
+    expect(value.controller.state.status).toBe('accepted');
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    await firstHost.emit('close');
+
+    expect(value.controller.state.status).toBe('accepted');
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    releaseCapture(value.stream);
+    await accepting;
+  });
+
+  it('captures speech-optimized bounded 360p media after acceptance and starts the verified host call', async () => {
     const value = await acceptedFixture();
 
     expect(value.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       video: {
-        width: {ideal: 960, max: 960},
-        height: {ideal: 540, max: 540},
-        frameRate: {ideal: 15, max: 15},
+        width: {ideal: 640, max: 640},
+        height: {ideal: 360, max: 360},
+        frameRate: {ideal: 12, max: 12},
         facingMode: 'user',
       },
-      audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: {ideal: 1},
+        sampleRate: {ideal: 48_000},
+      },
     });
     expect(value.peer.call).toHaveBeenCalledWith(
       'djcioko-studio-unic-id',
@@ -495,11 +583,32 @@ describe('PeerJS party media and mesh', () => {
       }},
     );
     expect(value.controller.state.status).toBe('joined');
+    expect(value.stream.audio.contentHint).toBe('speech');
     expect(value.root.querySelector('[data-party-peer="guest-b"]')).not.toBeNull();
 
     await value.peer.calls[0].emit('stream', mediaStream());
     expect(value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"] video').srcObject)
       .not.toBeNull();
+  });
+
+  it('caps each guest upload so audio stays stable as the mesh grows', async () => {
+    const value = await acceptedFixture();
+    const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
+
+    await vi.waitFor(() => expect(hostCall.senderUpdates).toHaveLength(2));
+    expect(hostCall.senderUpdates).toEqual([
+      {
+        kind: 'video',
+        parameters: {
+          encodings: [{maxBitrate: 350_000, maxFramerate: 12}],
+          degradationPreference: 'balanced',
+        },
+      },
+      {
+        kind: 'audio',
+        parameters: {encodings: [{maxBitrate: 48_000}]},
+      },
+    ]);
   });
 
   it('redials the host after a media reconnect request without reacquiring local media', async () => {
@@ -604,12 +713,14 @@ describe('PeerJS party media and mesh', () => {
   });
 
   it.each(['guest-removed', 'host-removed', 'host-ended', 'room-closed', 'party-closed'])(
-    'cleans up media when the host sends %s',
+    'cleans up media and restores public audio when the host sends %s',
     async type => {
       const value = await acceptedFixture();
+      expect(value.publicLivePlayer.muted).toBe(true);
       await value.host().emit('data', {type, requestId: 'request-1'});
       expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
       expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
+      expect(value.publicLivePlayer.muted).toBe(false);
       expect(value.controller.state.status).toBe(
         ['guest-removed', 'host-removed'].includes(type)
           ? 'removed'
@@ -617,4 +728,37 @@ describe('PeerJS party media and mesh', () => {
       );
     },
   );
+
+  it('restores public audio after a media permission error', async () => {
+    const value = await connectedFixture({
+      getUserMedia: vi.fn(async () => {
+        throw new DOMException('denied', 'NotAllowedError');
+      }),
+    });
+    value.publicLivePlayer.muted = false;
+    value.publicLivePlayer.defaultMuted = false;
+    value.publicLivePlayer.volume = 0.4;
+
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+
+    expect(value.controller.state.status).toBe('media_error');
+    expect(value.publicLivePlayer.muted).toBe(false);
+    expect(value.publicLivePlayer.defaultMuted).toBe(false);
+    expect(value.publicLivePlayer.volume).toBe(0.4);
+  });
+
+  it('restores public audio when the party controller is destroyed', async () => {
+    const value = await acceptedFixture();
+    value.publicLivePlayer.dispatchEvent(new Event('volumechange'));
+    expect(value.publicLivePlayer.muted).toBe(true);
+
+    await value.controller.destroy();
+
+    expect(value.publicLivePlayer.muted).toBe(false);
+    expect(value.publicLivePlayer.defaultMuted).toBe(false);
+    expect(value.publicLivePlayer.volume).toBe(1);
+  });
 });

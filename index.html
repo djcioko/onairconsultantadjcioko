@@ -114,8 +114,6 @@ let aiCutActive = false;
 let scaleMode = 'cover';
 let facingMode = 'user';
 let isOnAir = false;
-let liveStream = null;
-let liveVideoEl = null;
 let mpBusy = false;
 let selfieSegmentation = null;
 let screenWakeLock = null;
@@ -286,7 +284,13 @@ async function startCamera() {
   try {
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
     const constraints = {
-      audio: { echoCancellation: true, noiseSuppression: true },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: { ideal: 1 },
+        sampleRate: { ideal: 48000 }
+      },
       video: {
         facingMode,
         width: { ideal: 720 },
@@ -294,6 +298,11 @@ async function startCamera() {
       }
     };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    localStream.getAudioTracks().forEach((track) => {
+      if ('contentHint' in track) {
+        try { track.contentHint = 'speech'; } catch (_) {}
+      }
+    });
     video.srcObject = localStream;
     video.muted = true;
     video.setAttribute('playsinline', 'true');
@@ -308,26 +317,8 @@ async function startCamera() {
   }
 }
 
-function stopLivePreview() {
-  if (liveVideoEl) {
-    liveVideoEl.remove();
-    liveVideoEl = null;
-  }
-  liveStream = null;
-}
-
 function startLivePreview() {
-  stopLivePreview();
-  liveStream = canvas.captureStream(24);
-  if (localStream) {
-    localStream.getAudioTracks().forEach((t) => liveStream.addTrack(t));
-  }
-  liveVideoEl = document.createElement('video');
-  liveVideoEl.srcObject = liveStream;
-  liveVideoEl.muted = true;
-  liveVideoEl.playsInline = true;
-  liveVideoEl.play().catch(() => {});
-  showToast('ON AIR: canvas-ul e stream. În VDO.Ninja alege screen/window sau Virtual Cam.');
+  showToast('ON AIR: transmisia PeerJS este activă.');
 }
 
 async function requestScreenWakeLock() {
@@ -374,7 +365,6 @@ async function setOnAir(active) {
     return;
   }
 
-  stopLivePreview();
   await releaseScreenWakeLock();
   showToast('Transmisie oprită');
 }
@@ -483,6 +473,6 @@ window.addEventListener('pagehide', releaseScreenWakeLock);
 initMediaPipe();
 requestAnimationFrame(renderLoop);
 </script> 
-<script src="stream.js?v=party-peerjs-v4"></script>
+<script src="stream.js?v=party-peerjs-v5"></script>
 </body>
 </html>

@@ -3,7 +3,12 @@
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-import {beforeEach, expect, test, vi} from 'vitest';
+import {afterEach, beforeEach, expect, test, vi} from 'vitest';
+
+
+let originalSrcObjectDescriptor;
+let srcObjectAssignments;
+let attachedStreams;
 
 
 class FakeConnection {
@@ -30,11 +35,42 @@ class FakeConnection {
 
 
 beforeEach(() => {
+  originalSrcObjectDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLMediaElement.prototype,
+    'srcObject',
+  );
+  srcObjectAssignments = [];
+  attachedStreams = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+    configurable: true,
+    get() {
+      return attachedStreams.get(this) ?? null;
+    },
+    set(stream) {
+      attachedStreams.set(this, stream);
+      srcObjectAssignments.push({element: this, stream});
+    },
+  });
+
   document.head.innerHTML = '';
   document.body.innerHTML = `
     <header><span data-peer-host-status>PEERJS GAZDĂ</span></header>
     <main class="main-content"></main>
   `;
+});
+
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  if (originalSrcObjectDescriptor) {
+    Object.defineProperty(
+      HTMLMediaElement.prototype,
+      'srcObject',
+      originalSrcObjectDescriptor,
+    );
+  } else {
+    delete HTMLMediaElement.prototype.srcObject;
+  }
 });
 
 
@@ -91,4 +127,102 @@ test('a raised hand is immediately visible and vibrates once on the host phone',
       requestId: 'request-mobile',
     }),
   ]));
+});
+
+
+test('host rerender preserves active guest media and removes only absent tiles', () => {
+  const source = readFileSync('stream.js', 'utf8');
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play')
+    .mockResolvedValue(undefined);
+  vi.spyOn(HTMLMediaElement.prototype, 'pause')
+    .mockImplementation(() => {});
+  const alexStream = {id: 'stream-alex'};
+  const mariaStream = {id: 'stream-maria'};
+  const context = vm.createContext({
+    clearTimeout,
+    console,
+    document,
+    navigator: {},
+    setTimeout,
+    window: {addEventListener() {}, confirm: () => true},
+    alexStream,
+    mariaStream,
+  });
+
+  vm.runInContext(source, context);
+  vm.runInContext(`
+    renderPeerPartyHostState({
+      roomOpen: true,
+      peerStatus: 'online',
+      peerReady: true,
+      capacity: 9,
+      occupancy: 3,
+      pending: [],
+      accepted: [],
+      active: [
+        {
+          clientId: 'client-alex',
+          requestId: 'request-alex',
+          peerId: 'peer-alex',
+          name: 'Alex',
+          mic: true,
+          camera: true,
+          state: 'active',
+          stream: alexStream
+        },
+        {
+          clientId: 'client-maria',
+          requestId: 'request-maria',
+          peerId: 'peer-maria',
+          name: 'Maria',
+          mic: true,
+          camera: true,
+          state: 'active',
+          stream: mariaStream
+        }
+      ]
+    });
+  `, context);
+
+  const alexTile = document.querySelector('[data-client-id="client-alex"]');
+  const alexVideo = alexTile.querySelector('video');
+  const mariaTile = document.querySelector('[data-client-id="client-maria"]');
+
+  vm.runInContext(`
+    renderPeerPartyHostState({
+      roomOpen: true,
+      peerStatus: 'online',
+      peerReady: true,
+      capacity: 9,
+      occupancy: 2,
+      pending: [],
+      accepted: [],
+      active: [
+        {
+          clientId: 'client-alex',
+          requestId: 'request-alex',
+          peerId: 'peer-alex',
+          name: 'Alex',
+          mic: false,
+          camera: true,
+          state: 'active',
+          stream: alexStream
+        }
+      ]
+    });
+  `, context);
+
+  const rerenderedAlexTile = document.querySelector(
+    '[data-client-id="client-alex"]',
+  );
+  expect(rerenderedAlexTile).toBe(alexTile);
+  expect(rerenderedAlexTile.querySelector('video')).toBe(alexVideo);
+  expect(alexVideo.srcObject).toBe(alexStream);
+  expect(rerenderedAlexTile.querySelector('.dj-party-state').textContent)
+    .toContain('🔇');
+  expect(mariaTile.isConnected).toBe(false);
+  expect(document.querySelector('[data-client-id="client-maria"]')).toBeNull();
+  expect(srcObjectAssignments.filter(({element}) => element === alexVideo))
+    .toEqual([{element: alexVideo, stream: alexStream}]);
+  expect(play).toHaveBeenCalledTimes(2);
 });

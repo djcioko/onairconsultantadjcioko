@@ -300,6 +300,55 @@ test('public LIVE calls follow ON AIR without requiring a viewer refresh', () =>
   assert.equal(registry.size, 0);
 });
 
+test('outgoing PeerJS calls cap video load while preserving speech audio', async () => {
+  const context = loadStreamScript();
+  const updates = [];
+  const sender = kind => ({
+    track: {kind},
+    getParameters: () => ({encodings: [{}]}),
+    setParameters: async parameters => updates.push({kind, parameters}),
+  });
+  const call = {
+    peerConnection: {
+      getSenders: () => [sender('video'), sender('audio')],
+    },
+  };
+
+  const result = await context.prioritizePeerCall(call);
+
+  assert.equal(result, true);
+  assert.deepEqual(plain(updates), [
+    {
+      kind: 'video',
+      parameters: {
+        encodings: [{maxBitrate: 700000, maxFramerate: 15}],
+        degradationPreference: 'balanced',
+      },
+    },
+    {
+      kind: 'audio',
+      parameters: {
+        encodings: [{maxBitrate: 64000}],
+      },
+    },
+  ]);
+});
+
+test('the host broadcast captures one mobile-friendly 15 fps stream', () => {
+  const context = loadStreamScript();
+  const requestedFrameRates = [];
+  const expectedStream = {id: 'broadcast'};
+  const canvas = {
+    captureStream: frameRate => {
+      requestedFrameRates.push(frameRate);
+      return expectedStream;
+    },
+  };
+
+  assert.equal(context.createPeerBroadcastStream(canvas), expectedStream);
+  assert.deepEqual(requestedFrameRates, [15]);
+});
+
 test('party host UI model disables controls and explains PeerJS ownership states', () => {
   const context = loadStreamScript();
   const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});

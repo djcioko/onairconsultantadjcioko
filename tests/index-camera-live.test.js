@@ -137,6 +137,7 @@ function loadStudio({wakeLock = 'available'} = {}) {
   window.eval(inlineScript);
 
   return {
+    cameraStream,
     captureStream: HTMLCanvasElement.prototype.captureStream,
     previewStreams,
     wakeLockRequests,
@@ -164,9 +165,48 @@ describe('camera and ON AIR lifecycle', () => {
 
     expect(document.getElementById('recBtn').classList.contains('rec')).toBe(true);
     expect(document.getElementById('topLiveBadge').classList.contains('active')).toBe(true);
-    expect(studio.captureStream).toHaveBeenCalledTimes(1);
     expect(navigator.wakeLock.request).toHaveBeenCalledWith('screen');
     expect(studio.wakeLockRequests).toHaveLength(1);
+  });
+
+  test('camera capture requests speech-optimized microphone audio', async () => {
+    const studio = loadStudio();
+    const microphoneTrack = studio.cameraStream.getAudioTracks()[0];
+    microphoneTrack.contentHint = '';
+
+    document.getElementById('btnStartCam').click();
+    await flushAsyncWork();
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: {ideal: 1},
+        sampleRate: {ideal: 48_000},
+      },
+      video: {
+        facingMode: 'user',
+        width: {ideal: 720},
+        height: {ideal: 1280},
+      },
+    });
+    expect(microphoneTrack.contentHint).toBe('speech');
+  });
+
+  test('ON AIR does not create a duplicate local canvas capture or player stream', async () => {
+    const studio = loadStudio();
+    const recButton = document.getElementById('recBtn');
+
+    document.getElementById('btnStartCam').click();
+    await flushAsyncWork();
+    recButton.click();
+    await flushAsyncWork();
+    recButton.click();
+    await flushAsyncWork();
+
+    expect(studio.captureStream).not.toHaveBeenCalled();
+    expect(studio.previewStreams).toHaveLength(0);
   });
 
   test('the REC button stops and restarts ON AIR, including the wake lock', async () => {
@@ -186,7 +226,7 @@ describe('camera and ON AIR lifecycle', () => {
     await flushAsyncWork();
 
     expect(recButton.classList.contains('rec')).toBe(true);
-    expect(studio.captureStream).toHaveBeenCalledTimes(2);
+    expect(studio.captureStream).not.toHaveBeenCalled();
     expect(navigator.wakeLock.request).toHaveBeenCalledTimes(2);
   });
 
@@ -217,7 +257,7 @@ describe('camera and ON AIR lifecycle', () => {
 
       expect(document.getElementById('recBtn').classList.contains('rec')).toBe(true);
       expect(document.getElementById('topLiveBadge').classList.contains('active')).toBe(true);
-      expect(studio.captureStream).toHaveBeenCalledTimes(1);
+      expect(studio.captureStream).not.toHaveBeenCalled();
     },
   );
 });

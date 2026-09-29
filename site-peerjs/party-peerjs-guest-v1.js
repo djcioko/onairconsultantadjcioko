@@ -6,12 +6,18 @@ const RECONNECT_DELAY_MS = 1500;
 
 const MEDIA_CONSTRAINTS = Object.freeze({
   video: {
-    width: {ideal: 960, max: 960},
-    height: {ideal: 540, max: 540},
-    frameRate: {ideal: 15, max: 15},
+    width: {ideal: 640, max: 640},
+    height: {ideal: 360, max: 360},
+    frameRate: {ideal: 12, max: 12},
     facingMode: 'user',
   },
-  audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: {ideal: 1},
+    sampleRate: {ideal: 48_000},
+  },
 });
 
 
@@ -66,6 +72,38 @@ function loadClientId(storage, factory) {
 
 function safeClose(value) {
   try { value?.close?.(); } catch { /* already closed */ }
+}
+
+
+async function prioritizePartyCall(call) {
+  const senders = call?.peerConnection?.getSenders?.();
+  if (!Array.isArray(senders)) return false;
+  let updated = false;
+  for (const sender of senders) {
+    const kind = sender?.track?.kind;
+    if (
+      (kind !== 'video' && kind !== 'audio')
+      || typeof sender.getParameters !== 'function'
+      || typeof sender.setParameters !== 'function'
+    ) continue;
+    const parameters = sender.getParameters() || {};
+    const encodings = parameters.encodings?.length ? parameters.encodings : [{}];
+    parameters.encodings = encodings;
+    if (kind === 'video') {
+      encodings.forEach(encoding => {
+        encoding.maxBitrate = 350_000;
+        encoding.maxFramerate = 12;
+      });
+      parameters.degradationPreference = 'balanced';
+    } else {
+      encodings.forEach(encoding => { encoding.maxBitrate = 48_000; });
+    }
+    try {
+      await sender.setParameters(parameters);
+      updated = true;
+    } catch { /* browser keeps its negotiated defaults */ }
+  }
+  return updated;
 }
 
 
@@ -179,6 +217,7 @@ export function createPeerJsPartyGuest({
   let publicLiveVideo = null;
   let publicLiveTrack = null;
   const publicLiveCleanups = [];
+  let publicLiveAudioState = null;
   let legacyStatusText = null;
   let legacyStatusObserver = null;
   let legacyStatusOriginal = null;
@@ -206,7 +245,42 @@ export function createPeerJsPartyGuest({
     ui.camera.setAttribute('aria-pressed', String(snapshot.cameraEnabled));
     ui.microphone.textContent = snapshot.microphoneEnabled ? '🎙 Microfon' : '🔇 Microfon oprit';
     ui.camera.textContent = snapshot.cameraEnabled ? '📹 Cameră' : '🚫 Cameră oprită';
+    syncPublicLiveAudioExclusivity();
     syncLegacyStatusVisibility();
+  }
+
+  function restorePublicLiveAudio() {
+    const state = publicLiveAudioState;
+    if (!state) return;
+    publicLiveAudioState = null;
+    state.player.removeEventListener('volumechange', state.enforceMuted);
+    state.player.defaultMuted = state.defaultMuted;
+    state.player.volume = state.volume;
+    state.player.muted = state.muted;
+  }
+
+  function syncPublicLiveAudioExclusivity() {
+    const partyAudioActive = ['accepted', 'joining', 'joined'].includes(snapshot.status);
+    if (!partyAudioActive) {
+      restorePublicLiveAudio();
+      return;
+    }
+    if (!publicLiveVideo) return;
+    if (!publicLiveAudioState) {
+      const player = publicLiveVideo;
+      const enforceMuted = () => {
+        if (publicLiveAudioState?.player === player && !player.muted) player.muted = true;
+      };
+      publicLiveAudioState = {
+        player,
+        muted: player.muted,
+        defaultMuted: player.defaultMuted,
+        volume: player.volume,
+        enforceMuted,
+      };
+      player.addEventListener('volumechange', enforceMuted);
+    }
+    publicLiveAudioState.enforceMuted();
   }
 
   function restoreLegacyStatus() {
@@ -383,7 +457,8 @@ export function createPeerJsPartyGuest({
       hostConnection = null;
       clearRequestTimer();
       if (!['idle', 'rejected', 'busy', 'expired', 'removed', 'ended', 'room_closed'].includes(snapshot.status)) {
-        emit({status: snapshot.status === 'joined' ? 'joined' : 'waiting_host'});
+        const acceptedMediaActive = ['accepted', 'joining', 'joined'].includes(snapshot.status);
+        emit({status: acceptedMediaActive ? snapshot.status : 'waiting_host'});
       }
       scheduleHostReconnect();
     };
@@ -521,8 +596,9 @@ export function createPeerJsPartyGuest({
         fromPeerId: snapshot.peerId,
       },
     });
-    if (call) bindCall(call, entry.peerId, entry);
-    else scheduleMeshReconnect(entry.peerId);
+    if (call && bindCall(call, entry.peerId, entry)) {
+      void prioritizePartyCall(call);
+    } else scheduleMeshReconnect(entry.peerId);
   }
 
   function applyRoster(data) {
@@ -587,7 +663,11 @@ export function createPeerJsPartyGuest({
         name: snapshot.name,
       },
     });
-    return Boolean(call && bindCall(call, HOST_PEER_ID, {name: 'DJ Cioko', role: 'host'}));
+    const bound = Boolean(
+      call && bindCall(call, HOST_PEER_ID, {name: 'DJ Cioko', role: 'host'}),
+    );
+    if (bound) void prioritizePartyCall(call);
+    return bound;
   }
 
   async function startAcceptedMedia() {
@@ -604,6 +684,11 @@ export function createPeerJsPartyGuest({
           return;
         }
         localStream = stream;
+        stream.getAudioTracks().forEach(track => {
+          if ('contentHint' in track) {
+            try { track.contentHint = 'speech'; } catch { /* unsupported */ }
+          }
+        });
         emit({status: 'joining', microphoneEnabled: true, cameraEnabled: true});
         createTile(snapshot.peerId, {name: snapshot.name, role: 'guest'});
         attachStream(snapshot.peerId, stream, {name: snapshot.name, role: 'guest'});
@@ -705,7 +790,10 @@ export function createPeerJsPartyGuest({
       return;
     }
     if (!bindCall(call, remote, entry)) return;
-    try { call.answer(localStream); } catch { safeClose(call); }
+    try {
+      call.answer(localStream);
+      void prioritizePartyCall(call);
+    } catch { safeClose(call); }
   }
 
   async function cleanupMedia() {

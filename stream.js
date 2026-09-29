@@ -78,6 +78,72 @@ window.addEventListener(
     () => publicLiveCallRegistry.sync()
 );
 
+
+function createPeerBroadcastStream(canvas) {
+    return canvas.captureStream(15);
+}
+
+
+async function prioritizePeerCall(call, {
+    videoMaxBitrate = 700000,
+    videoMaxFramerate = 15,
+    audioMaxBitrate = 64000
+} = {}) {
+    const senders =
+        call?.peerConnection?.getSenders?.();
+
+    if (!Array.isArray(senders)) {
+        return false;
+    }
+
+    let updated = false;
+
+    for (const sender of senders) {
+        const kind = sender?.track?.kind;
+
+        if (
+            (kind !== 'video' && kind !== 'audio') ||
+            typeof sender.getParameters !== 'function' ||
+            typeof sender.setParameters !== 'function'
+        ) {
+            continue;
+        }
+
+        const parameters = sender.getParameters() || {};
+        const encodings =
+            parameters.encodings?.length
+                ? parameters.encodings
+                : [{}];
+        parameters.encodings = encodings;
+
+        if (kind === 'video') {
+            encodings.forEach(encoding => {
+                encoding.maxBitrate = videoMaxBitrate;
+                encoding.maxFramerate =
+                    videoMaxFramerate;
+            });
+            parameters.degradationPreference =
+                'balanced';
+        } else {
+            encodings.forEach(encoding => {
+                encoding.maxBitrate = audioMaxBitrate;
+            });
+        }
+
+        try {
+            await sender.setParameters(parameters);
+            updated = true;
+        } catch (error) {
+            console.warn(
+                '[AUDIO] Parametrii WebRTC nu au putut fi aplicați:',
+                error
+            );
+        }
+    }
+
+    return updated;
+}
+
 /* =========================================================
    VIEWER COUNTER EXISTENT
    ========================================================= */
@@ -1017,6 +1083,7 @@ function createPeerPartyHostState({
 
         try {
             call.answer(answerStream);
+            void prioritizePeerCall(call);
         } catch (_) {
             active.delete(record.clientId);
             record.call = null;
@@ -1504,59 +1571,136 @@ function renderPeerPartyHostState(state) {
             right.name,
             'ro'
         ));
-    grid.replaceChildren();
+
+    const visibleClientIds = new Set(
+        guests.map(entry => entry.clientId)
+    );
+
+    grid
+        .querySelectorAll('.dj-party-tile')
+        .forEach(tile => {
+            if (
+                visibleClientIds.has(
+                    tile.dataset.clientId
+                )
+            ) {
+                return;
+            }
+
+            const video = tile.querySelector(
+                '.dj-party-video'
+            );
+
+            if (video) {
+                try {
+                    video.pause();
+                } catch (_) {}
+
+                video.srcObject = null;
+            }
+
+            tile.remove();
+        });
 
     guests.forEach(entry => {
-        const tile = document.createElement('article');
-        tile.className = 'dj-party-tile';
-        tile.dataset.clientId = entry.clientId;
+        let tile = [...grid.children].find(
+            child =>
+                child.dataset.clientId ===
+                entry.clientId
+        );
 
-        if (entry.stream) {
+        if (!tile) {
+            tile = document.createElement('article');
+            tile.className = 'dj-party-tile';
+            tile.dataset.clientId = entry.clientId;
+
             const video = document.createElement('video');
             video.className = 'dj-party-video';
             video.autoplay = true;
             video.playsInline = true;
             video.controls = true;
-            video.srcObject = entry.stream;
-            video.play().catch(() => {});
-            tile.appendChild(video);
-        } else {
+            video.hidden = true;
+
             const placeholder =
                 document.createElement('div');
             placeholder.className =
                 'dj-party-placeholder';
-            placeholder.textContent =
-                (entry.name[0] || '?').toUpperCase();
-            tile.appendChild(placeholder);
+            placeholder.hidden = false;
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'dj-party-remove';
+            remove.textContent = 'Elimină';
+            remove.addEventListener(
+                'click',
+                () => peerPartyHost?.removeParticipant(
+                    tile.dataset.clientId
+                )
+            );
+
+            const meta = document.createElement('div');
+            meta.className = 'dj-party-meta';
+            const name = document.createElement('strong');
+            const devices = document.createElement('span');
+            devices.className = 'dj-party-state';
+            meta.append(name, devices);
+            tile.append(
+                video,
+                placeholder,
+                remove,
+                meta
+            );
         }
 
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'dj-party-remove';
-        remove.textContent = 'Elimină';
+        const video = tile.querySelector(
+            '.dj-party-video'
+        );
+        const placeholder = tile.querySelector(
+            '.dj-party-placeholder'
+        );
+        const remove = tile.querySelector(
+            '.dj-party-remove'
+        );
+        const name = tile.querySelector(
+            '.dj-party-meta strong'
+        );
+        const devices = tile.querySelector(
+            '.dj-party-state'
+        );
+
+        if (entry.stream) {
+            placeholder.hidden = true;
+            video.hidden = false;
+
+            if (video.srcObject !== entry.stream) {
+                video.srcObject = entry.stream;
+                video.play().catch(() => {});
+            }
+        } else {
+            video.hidden = true;
+            placeholder.hidden = false;
+            placeholder.textContent =
+                (entry.name[0] || '?').toUpperCase();
+
+            if (video.srcObject) {
+                try {
+                    video.pause();
+                } catch (_) {}
+
+                video.srcObject = null;
+            }
+        }
+
         remove.disabled =
             uiModel.requestControlsDisabled;
         remove.setAttribute(
             'aria-label',
             `Elimină ${entry.name}`
         );
-        remove.addEventListener(
-            'click',
-            () => peerPartyHost?.removeParticipant(
-                entry.clientId
-            )
-        );
-
-        const meta = document.createElement('div');
-        meta.className = 'dj-party-meta';
-        const name = document.createElement('strong');
         name.textContent = entry.name;
-        const devices = document.createElement('span');
-        devices.className = 'dj-party-state';
         devices.textContent =
             `${entry.mic ? '🎙️' : '🔇'} ${entry.camera ? '📹' : '📷 oprită'} · ${entry.state === 'active' ? 'conectat' : 'se conectează'}`;
-        meta.append(name, devices);
-        tile.append(remove, meta);
+
         grid.appendChild(tile);
     });
 }
@@ -2444,7 +2588,7 @@ function initStudioBroadcast() {
      * LIVE-ul existent rămâne neschimbat.
      */
     broadcastStream =
-        canvasEl.captureStream(30);
+        createPeerBroadcastStream(canvasEl);
 
 
     onlineViewerCounter =
@@ -2627,6 +2771,7 @@ function initStudioBroadcast() {
                 call.answer(
                     broadcastStream
                 );
+                void prioritizePeerCall(call);
 
                 console.log(
                     'Un vizitator a accesat transmisiunea live!'
