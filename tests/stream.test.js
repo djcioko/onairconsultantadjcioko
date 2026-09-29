@@ -200,6 +200,49 @@ test('party host reports room availability before a spectator raises a hand', ()
   });
 });
 
+test('guest media errors release accepted and active seats so occupancy returns to one', () => {
+  const context = loadStreamScript();
+  const clock = createFakeClock();
+  const host = context.createPeerPartyHostState({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+  const connection = new FakeConnection('guest-request');
+  host.attachConnection(connection);
+
+  connection.emit('data', guestRequest({
+    requestId: 'request-reserved', peerId: 'peer-ana', clientId: 'client-ana', name: 'Ana',
+  }));
+  host.acceptRequest('request-reserved');
+  assert.equal(host.snapshot().occupancy, 2);
+  assert.equal(host.snapshot().accepted.length, 1);
+
+  connection.emit('data', {
+    type: 'guest-media-error', requestId: 'request-reserved', clientId: 'client-ana',
+  });
+  assert.equal(host.snapshot().occupancy, 1);
+  assert.equal(host.snapshot().accepted.length, 0);
+
+  connection.emit('data', guestRequest({
+    requestId: 'request-active', peerId: 'peer-ana', clientId: 'client-ana', name: 'Ana',
+  }));
+  host.acceptRequest('request-active');
+  const call = new FakeCall('peer-ana', {
+    type: 'guest-chat', requestId: 'request-active', clientId: 'client-ana',
+  });
+  host.acceptMediaCall(call, {id: 'program'});
+  assert.equal(host.snapshot().occupancy, 2);
+  assert.equal(host.snapshot().active.length, 1);
+
+  connection.emit('data', {
+    type: 'guest-media-error', requestId: 'request-active', clientId: 'client-ana',
+  });
+  assert.equal(host.snapshot().occupancy, 1);
+  assert.equal(host.snapshot().active.length, 0);
+  assert.equal(call.closed, true);
+});
+
 test('party host ignores guest traffic until it owns the stable PeerJS ID', () => {
   const context = loadStreamScript();
   const host = context.createPeerPartyHostState({initialPeerStatus: 'connecting'});

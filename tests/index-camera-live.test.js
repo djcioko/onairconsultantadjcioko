@@ -72,6 +72,7 @@ function loadStudio({wakeLock = 'available'} = {}) {
     .map((script) => script.textContent)
     .find((source) => source.includes('async function startCamera'));
 
+  document.head.innerHTML = parsed.head.innerHTML;
   document.body.innerHTML = parsed.body.innerHTML;
   Object.defineProperty(document, 'visibilityState', {
     configurable: true,
@@ -157,6 +158,39 @@ afterEach(() => {
 });
 
 describe('camera and ON AIR lifecycle', () => {
+  test('studio controls stay readable, tappable, and responsive', () => {
+    loadStudio();
+
+    const app = document.querySelector('.app');
+    const topbar = document.querySelector('.topbar');
+    const statuses = document.querySelector('.status-group');
+    const toolButton = document.querySelector('.btn');
+    const recordButton = document.querySelector('.rec-btn');
+    const logo = document.querySelector('.logo');
+    const peerStatus = document.querySelector('.peer-host-status');
+    const viewerCounter = document.querySelector('.viewer-counter');
+    const liveBadge = document.querySelector('.live-badge');
+    const fieldLabel = document.querySelector('.field label');
+    const fieldInput = document.querySelector('.field input');
+
+    expect(getComputedStyle(app).maxWidth).toBe('760px');
+    expect(getComputedStyle(topbar).flexWrap).toBe('wrap');
+    expect(getComputedStyle(statuses).flexWrap).toBe('wrap');
+    expect(getComputedStyle(toolButton).minHeight).toBe('44px');
+    expect(parseFloat(getComputedStyle(toolButton).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(parseFloat(getComputedStyle(logo).fontSize)).toBeGreaterThanOrEqual(14);
+    expect(parseFloat(getComputedStyle(peerStatus).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(parseFloat(getComputedStyle(viewerCounter).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(parseFloat(getComputedStyle(liveBadge).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(parseFloat(getComputedStyle(fieldLabel).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(getComputedStyle(fieldInput).minHeight).toBe('44px');
+    expect(parseFloat(getComputedStyle(fieldInput).fontSize)).toBeGreaterThanOrEqual(14);
+
+    recordButton.classList.add('rec');
+    expect(parseFloat(getComputedStyle(recordButton).width)).toBeGreaterThanOrEqual(44);
+    expect(parseFloat(getComputedStyle(recordButton).height)).toBeGreaterThanOrEqual(44);
+  });
+
   test('a successful camera start immediately goes ON AIR and holds a screen wake lock', async () => {
     const studio = loadStudio();
 

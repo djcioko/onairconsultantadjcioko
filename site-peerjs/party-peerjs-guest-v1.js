@@ -3,6 +3,8 @@ const NAME_KEY = 'djcioko.party.names.v1';
 const CLIENT_KEY = 'djcioko.party.peerjs.client.v1';
 const REQUEST_TIMEOUT_MS = 90_000;
 const RECONNECT_DELAY_MS = 1500;
+const HOST_MEDIA_TIMEOUT_MS = 12_000;
+const HOST_MEDIA_MAX_ATTEMPTS = 3;
 
 const MEDIA_CONSTRAINTS = Object.freeze({
   video: {
@@ -209,6 +211,10 @@ export function createPeerJsPartyGuest({
   let localStream = null;
   let requestTimer = null;
   let reconnectTimer = null;
+  let hostMediaWatchdogTimer = null;
+  let hostMediaRetryTimer = null;
+  let hostMediaAttempts = 0;
+  let hostMediaFailure = null;
   let joining = null;
   let leaving = null;
   let mounted = false;
@@ -240,7 +246,12 @@ export function createPeerJsPartyGuest({
     const pending = ['pending', 'accepted', 'joining', 'joined'].includes(snapshot.status);
     ui.raise.disabled = pending || liveLocked;
     ui.input.disabled = pending || liveLocked;
-    ui.controls.hidden = snapshot.status !== 'joined';
+    const mediaSessionActive = ['accepted', 'joining', 'joined'].includes(snapshot.status);
+    const deviceControlsReady = Boolean(localStream)
+      && ['joining', 'joined'].includes(snapshot.status);
+    ui.controls.hidden = !mediaSessionActive;
+    ui.microphone.disabled = !deviceControlsReady;
+    ui.camera.disabled = !deviceControlsReady;
     ui.microphone.setAttribute('aria-pressed', String(snapshot.microphoneEnabled));
     ui.camera.setAttribute('aria-pressed', String(snapshot.cameraEnabled));
     ui.microphone.textContent = snapshot.microphoneEnabled ? '🎙 Microfon' : '🔇 Microfon oprit';
@@ -485,7 +496,9 @@ export function createPeerJsPartyGuest({
       node.className = 'party-peerjs-tile';
       node.dataset.partyPeer = peerId;
       node.innerHTML = `
-        <div class="party-peerjs-media"><video autoplay playsinline></video><span data-party-fallback>•</span></div>
+        <div class="party-peerjs-media"><video autoplay playsinline></video><span data-party-fallback>•</span>
+          <button type="button" class="party-peerjs-unmute" data-party-unmute hidden>Pornește sunetul</button>
+        </div>
         <div class="party-peerjs-meta"><strong data-party-display-name></strong><div>
           <span data-party-mic></span><span data-party-cam></span>
         </div></div>`;
@@ -493,13 +506,25 @@ export function createPeerJsPartyGuest({
         node,
         video: node.querySelector('video'),
         fallback: node.querySelector('[data-party-fallback]'),
+        unmute: node.querySelector('[data-party-unmute]'),
         name: node.querySelector('[data-party-display-name]'),
         mic: node.querySelector('[data-party-mic]'),
         cam: node.querySelector('[data-party-cam]'),
       };
-      tile.video.muted = peerId === snapshot.peerId;
+      tile.video.muted = peerId === snapshot.peerId || peerId === HOST_PEER_ID;
+      tile.unmute.addEventListener('click', async () => {
+        tile.video.muted = false;
+        try {
+          await tile.video.play?.();
+          tile.unmute.hidden = true;
+        } catch {
+          tile.video.muted = true;
+          tile.unmute.hidden = false;
+        }
+      });
       tiles.set(peerId, tile);
-      ui.grid.append(node);
+      if (peerId === HOST_PEER_ID) ui.grid.prepend(node);
+      else ui.grid.append(node);
     }
     updateTile(peerId, entry);
     return tile;
@@ -512,7 +537,9 @@ export function createPeerJsPartyGuest({
       || (peerId === HOST_PEER_ID ? 'DJ Cioko' : peerId === snapshot.peerId ? snapshot.name : 'Invitat');
     const microphoneEnabled = entry.microphoneEnabled ?? entry.microphone ?? true;
     const cameraEnabled = entry.cameraEnabled ?? entry.camera ?? true;
-    tile.name.textContent = peerId === snapshot.peerId ? `${name} (tu)` : name;
+    tile.name.textContent = peerId === HOST_PEER_ID
+      ? 'DJCIOKOSTUDIO · Gazdă'
+      : peerId === snapshot.peerId ? `${name} (tu)` : name;
     tile.mic.textContent = microphoneEnabled ? '🎙 pornit' : '🔇 oprit';
     tile.cam.textContent = cameraEnabled ? '📹 pornită' : '🚫 oprită';
     tile.mic.dataset.state = microphoneEnabled ? 'on' : 'off';
@@ -525,6 +552,10 @@ export function createPeerJsPartyGuest({
     tile.video.srcObject = stream;
     tile.video.hidden = false;
     tile.fallback.hidden = true;
+    if (peerId === HOST_PEER_ID) {
+      tile.video.muted = true;
+      tile.unmute.hidden = false;
+    }
     Promise.resolve(tile.video.play?.()).catch(() => {});
   }
 
@@ -541,6 +572,66 @@ export function createPeerJsPartyGuest({
     const timer = meshReconnectTimers.get(peerId);
     if (timer != null) timers.clearTimeout(timer);
     meshReconnectTimers.delete(peerId);
+  }
+
+  function clearHostMediaWatchdog() {
+    if (hostMediaWatchdogTimer != null) timers.clearTimeout(hostMediaWatchdogTimer);
+    hostMediaWatchdogTimer = null;
+  }
+
+  function clearHostMediaRetry() {
+    if (hostMediaRetryTimer != null) timers.clearTimeout(hostMediaRetryTimer);
+    hostMediaRetryTimer = null;
+  }
+
+  function cancelHostMediaRecovery({resetAttempts = true} = {}) {
+    clearHostMediaWatchdog();
+    clearHostMediaRetry();
+    if (resetAttempts) hostMediaAttempts = 0;
+  }
+
+  function hostMediaIsPending() {
+    return Boolean(localStream && snapshot.requestId)
+      && ['accepted', 'joining'].includes(snapshot.status);
+  }
+
+  function failHostMedia(reason) {
+    if (hostMediaFailure) return hostMediaFailure;
+    hostMediaFailure = Promise.resolve().then(async () => {
+      if (!hostMediaIsPending()) return false;
+      cancelHostMediaRecovery();
+      safeSend(hostConnection, message('guest-media-error', {reason}));
+      await finishTerminal('error');
+      return true;
+    }).finally(() => { hostMediaFailure = null; });
+    return hostMediaFailure;
+  }
+
+  function scheduleHostMediaRetry(reason) {
+    clearHostMediaWatchdog();
+    if (!hostMediaIsPending() || hostMediaRetryTimer != null) return;
+    if (hostMediaAttempts >= HOST_MEDIA_MAX_ATTEMPTS) {
+      void failHostMedia(reason);
+      return;
+    }
+    hostMediaRetryTimer = timers.setTimeout(() => {
+      hostMediaRetryTimer = null;
+      if (!hostMediaIsPending()) return;
+      if (!callHostWithLocalStream({replace: true})) {
+        scheduleHostMediaRetry('host-call-unavailable');
+      }
+    }, RECONNECT_DELAY_MS);
+  }
+
+  function armHostMediaWatchdog(call) {
+    clearHostMediaWatchdog();
+    hostMediaWatchdogTimer = timers.setTimeout(() => {
+      hostMediaWatchdogTimer = null;
+      if (!hostMediaIsPending() || calls.get(HOST_PEER_ID) !== call) return;
+      calls.delete(HOST_PEER_ID);
+      safeClose(call);
+      scheduleHostMediaRetry('host-stream-timeout');
+    }, HOST_MEDIA_TIMEOUT_MS);
   }
 
   function scheduleMeshReconnect(peerId) {
@@ -567,8 +658,16 @@ export function createPeerJsPartyGuest({
       return false;
     }
     calls.set(peerId, call);
-    call.on('stream', stream => attachStream(peerId, stream, roster.get(peerId) ?? entry));
-    const closed = () => {
+    call.on('stream', stream => {
+      if (calls.get(peerId) !== call) return;
+      attachStream(peerId, stream, roster.get(peerId) ?? entry);
+      if (peerId === HOST_PEER_ID && ['accepted', 'joining'].includes(snapshot.status)) {
+        cancelHostMediaRecovery();
+        emit({status: 'joined'});
+        sendState({state: 'joined'});
+      }
+    });
+    const closed = reason => {
       if (calls.get(peerId) !== call) return;
       calls.delete(peerId);
       const tile = tiles.get(peerId);
@@ -576,11 +675,13 @@ export function createPeerJsPartyGuest({
         tile.video.srcObject = null;
         tile.video.hidden = true;
         tile.fallback.hidden = false;
+        tile.unmute.hidden = true;
       }
-      if (peerId !== HOST_PEER_ID) scheduleMeshReconnect(peerId);
+      if (peerId === HOST_PEER_ID) scheduleHostMediaRetry(reason);
+      else scheduleMeshReconnect(peerId);
     };
-    call.on('close', closed);
-    call.on('error', closed);
+    call.on('close', () => closed('host-call-closed'));
+    call.on('error', () => closed('host-call-error'));
     return true;
   }
 
@@ -651,22 +752,30 @@ export function createPeerJsPartyGuest({
     if (!localStream || !snapshot.requestId || !peer) return false;
     const previous = calls.get(HOST_PEER_ID);
     if (previous && !replace) return true;
+    if (hostMediaAttempts >= HOST_MEDIA_MAX_ATTEMPTS) return false;
     if (previous) {
       calls.delete(HOST_PEER_ID);
       safeClose(previous);
     }
-    const call = peer.call(HOST_PEER_ID, localStream, {
-      metadata: {
-        type: 'guest-chat',
-        requestId: snapshot.requestId,
-        clientId,
-        name: snapshot.name,
-      },
-    });
+    hostMediaAttempts += 1;
+    let call = null;
+    try {
+      call = peer.call(HOST_PEER_ID, localStream, {
+        metadata: {
+          type: 'guest-chat',
+          requestId: snapshot.requestId,
+          clientId,
+          name: snapshot.name,
+        },
+      });
+    } catch { /* handled by the bounded retry below */ }
     const bound = Boolean(
       call && bindCall(call, HOST_PEER_ID, {name: 'DJ Cioko', role: 'host'}),
     );
-    if (bound) void prioritizePartyCall(call);
+    if (bound) {
+      armHostMediaWatchdog(call);
+      void prioritizePartyCall(call);
+    }
     return bound;
   }
 
@@ -690,12 +799,11 @@ export function createPeerJsPartyGuest({
           }
         });
         emit({status: 'joining', microphoneEnabled: true, cameraEnabled: true});
+        createTile(HOST_PEER_ID, {name: 'DJ Cioko', role: 'host'});
         createTile(snapshot.peerId, {name: snapshot.name, role: 'guest'});
         attachStream(snapshot.peerId, stream, {name: snapshot.name, role: 'guest'});
-        createTile(HOST_PEER_ID, {name: 'DJ Cioko', role: 'host'});
-        if (!callHostWithLocalStream()) throw new Error('HOST_CALL_UNAVAILABLE');
-        emit({status: 'joined'});
-        sendState({state: 'joined'});
+        cancelHostMediaRecovery();
+        if (!callHostWithLocalStream()) scheduleHostMediaRetry('host-call-unavailable');
       } catch (error) {
         if (activeEpoch !== epoch) return;
         safeSend(hostConnection, message('guest-media-error', {reason: error?.name ?? 'unavailable'}));
@@ -745,12 +853,13 @@ export function createPeerJsPartyGuest({
       && localStream
       && ['accepted', 'joining', 'joined'].includes(snapshot.status)
     ) {
+      const restartingJoinedSession = snapshot.status === 'joined';
+      clearHostMediaRetry();
+      clearHostMediaWatchdog();
+      if (restartingJoinedSession) hostMediaAttempts = 0;
       emit({status: 'joining'});
-      if (callHostWithLocalStream({replace: true})) {
-        emit({status: 'joined'});
-        sendState({state: 'joined'});
-      } else {
-        emit({status: 'error'});
+      if (!callHostWithLocalStream({replace: true})) {
+        scheduleHostMediaRetry('host-call-unavailable');
       }
       return;
     }
@@ -760,8 +869,7 @@ export function createPeerJsPartyGuest({
       return;
     }
     if (data.type === 'guest-expired') {
-      clearRequestTimer();
-      emit({status: 'expired', requestId: null});
+      await finishTerminal('expired');
       return;
     }
     const terminal = {
@@ -797,8 +905,10 @@ export function createPeerJsPartyGuest({
   }
 
   async function cleanupMedia() {
-    for (const call of new Set(calls.values())) safeClose(call);
+    cancelHostMediaRecovery();
+    const activeCalls = new Set(calls.values());
     calls.clear();
+    for (const call of activeCalls) safeClose(call);
     for (const timer of meshReconnectTimers.values()) timers.clearTimeout(timer);
     meshReconnectTimers.clear();
     if (localStream) {
@@ -819,7 +929,7 @@ export function createPeerJsPartyGuest({
   }
 
   async function setDevice(kind, enabled) {
-    if (!localStream || snapshot.status !== 'joined') return;
+    if (!localStream || !['joining', 'joined'].includes(snapshot.status)) return;
     const tracks = kind === 'microphone'
       ? localStream.getAudioTracks() : localStream.getVideoTracks();
     tracks.forEach(track => { track.enabled = Boolean(enabled); });

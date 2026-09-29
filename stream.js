@@ -852,7 +852,10 @@ function createPeerPartyHostState({
                     connection,
                     message
                 );
-            } else if (message.type === 'guest-left') {
+            } else if (
+                message.type === 'guest-left' ||
+                message.type === 'guest-media-error'
+            ) {
                 guestLeft(connection, message);
             }
         });
@@ -1312,36 +1315,40 @@ function ensurePeerPartyHostUi() {
     const style = document.createElement('style');
     style.id = 'djPeerPartyHostStyle';
     style.textContent = `
-      #djPeerPartyHost{margin:14px 10px 0;padding:13px;border:1px solid #2a5570;border-radius:14px;background:#0a1721;color:#eaf6ff;font-family:Georgia,serif}
+      #djPeerPartyHost{margin:14px 10px 0;padding:14px;border:1px solid #2a5570;border-radius:14px;background:#0a1721;color:#eaf6ff;font-family:Georgia,serif}
       #djPeerPartyHost *{box-sizing:border-box}
-      .dj-party-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
-      .dj-party-head strong{color:#b9e4ff;font-size:13px;letter-spacing:.04em}
-      .dj-party-count{padding:4px 8px;border-radius:20px;background:#123044;color:#9fe8ff;font-size:11px;font-weight:bold}
-      .dj-party-status{margin:5px 0 10px;color:#9bb6c9;font-size:11px}
-      .dj-party-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}
-      .dj-party-actions button,.dj-party-request button,.dj-party-remove{min-height:40px;border:1px solid #4d86aa;border-radius:9px;padding:8px;background:#194c6d;color:#fff;font:700 11px Georgia,serif;cursor:pointer}
+      .dj-party-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+      .dj-party-head strong{color:#b9e4ff;font-size:14px;line-height:1.35;letter-spacing:.04em}
+      .dj-party-count{padding:5px 9px;border-radius:20px;background:#123044;color:#9fe8ff;font-size:13px;font-weight:bold}
+      .dj-party-status{margin:6px 0 12px;color:#b4cad9;font-size:14px;line-height:1.4}
+      .dj-party-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+      .dj-party-actions button,.dj-party-request button,.dj-party-remove{min-height:44px;border:1px solid #4d86aa;border-radius:9px;padding:9px;background:#194c6d;color:#fff;font:700 14px Georgia,serif;cursor:pointer}
       .dj-party-actions button[disabled]{opacity:.4;cursor:not-allowed}
       .dj-party-close{background:#8b2937!important;border-color:#b74d5c!important}
-      .dj-party-requests{display:grid;gap:7px;margin-bottom:10px}
-      .dj-party-empty{padding:9px;text-align:center;color:#7f9aae;font-size:11px;border:1px dashed #244257;border-radius:9px}
-      .dj-party-request{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px;padding:8px;border-radius:10px;background:#0d2230;border:1px solid #24485f}
-      .dj-party-request-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:bold}
+      .dj-party-requests{display:grid;gap:8px;margin-bottom:12px}
+      .dj-party-empty{padding:10px;text-align:center;color:#9bb6c9;font-size:13px;line-height:1.4;border:1px dashed #34556c;border-radius:9px}
+      .dj-party-request{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:8px;padding:10px;border-radius:10px;background:#0d2230;border:1px solid #24485f}
+      .dj-party-request-name{grid-column:1/-1;overflow-wrap:anywhere;font-size:14px;line-height:1.35;font-weight:bold}
       .dj-party-request .reject{background:#782a36;border-color:#9e4050}
       .dj-party-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
       .dj-party-tile{position:relative;min-width:0;overflow:hidden;border:1px solid #2a5570;border-radius:11px;background:#02070b;aspect-ratio:9/13}
       .dj-party-video,.dj-party-placeholder{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+      .dj-party-host{border:2px solid #7ecbff;box-shadow:0 0 0 1px rgba(126,203,255,.3),0 8px 24px rgba(0,0,0,.35)}
+      .dj-party-host .dj-party-video{object-fit:contain}
+      .dj-party-tile--solo{grid-column:1/-1;width:100%;justify-self:center}
       .dj-party-placeholder{display:flex;align-items:center;justify-content:center;color:#7ecbff;font-size:30px}
-      .dj-party-meta{position:absolute;left:0;right:0;bottom:0;padding:28px 7px 7px;background:linear-gradient(transparent,rgba(0,0,0,.9));font-size:10px}
-      .dj-party-meta strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:11px}
-      .dj-party-state{display:block;margin-top:3px;color:#b9e4ff}
-      .dj-party-remove{position:absolute;right:5px;top:5px;z-index:2;min-height:32px;padding:5px 7px;background:#8b2937;border-color:#b74d5c;font-size:9px}
+      .dj-party-placeholder[hidden]{display:none}
+      .dj-party-meta{position:absolute;left:0;right:0;bottom:0;padding:34px 9px 9px;background:linear-gradient(transparent,rgba(0,0,0,.94));font-size:13px;line-height:1.35}
+      .dj-party-meta strong{display:block;overflow-wrap:anywhere;color:#fff;font-size:14px;line-height:1.35}
+      .dj-party-state{display:block;margin-top:4px;color:#c8ecff;font-size:13px;line-height:1.35}
+      .dj-party-remove{position:absolute;right:6px;top:6px;z-index:2;min-height:44px;padding:8px 10px;background:#8b2937;border-color:#b74d5c;font-size:13px}
       .dj-party-alert{position:fixed;z-index:10000;top:calc(env(safe-area-inset-top,0px) + 62px);left:50%;width:min(410px,calc(100vw - 20px));transform:translateX(-50%);padding:12px;border:2px solid #f2c94c;border-radius:14px;background:rgba(7,16,24,.98);box-shadow:0 12px 35px rgba(0,0,0,.55);color:#fff}
       .dj-party-alert[hidden]{display:none}
-      .dj-party-alert-title{display:block;margin-bottom:9px;color:#f7d968;font-size:13px;text-align:center}
+      .dj-party-alert-title{display:block;margin-bottom:9px;color:#f7d968;font-size:15px;line-height:1.35;text-align:center}
       .dj-party-alert-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-      .dj-party-alert button{min-height:46px;border:1px solid #79bce5;border-radius:10px;background:#176b48;color:#fff;font:700 12px Georgia,serif}
+      .dj-party-alert button{min-height:46px;border:1px solid #79bce5;border-radius:10px;background:#176b48;color:#fff;font:700 14px Georgia,serif}
       .dj-party-alert .reject{background:#8b2937;border-color:#b74d5c}
-      @media (min-width:390px){.dj-party-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media (min-width:700px){.dj-party-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.dj-party-request{grid-template-columns:minmax(0,1fr) auto auto}.dj-party-request-name{grid-column:auto}}
     `;
     document.head.appendChild(style);
 
@@ -1369,7 +1376,7 @@ function ensurePeerPartyHostUi() {
         </div>
       </aside>
       <div class="dj-party-requests" id="djPeerPartyRequests"></div>
-      <div class="dj-party-grid" id="djPeerPartyGrid" aria-label="Invitați conectați"></div>
+      <div class="dj-party-grid" id="djPeerPartyGrid" aria-label="Gazdă și invitați conectați"></div>
     `;
 
     const mount =
@@ -1572,6 +1579,88 @@ function renderPeerPartyHostState(state) {
             'ro'
         ));
 
+    const hostMic =
+        typeof audioEnabled === 'undefined'
+            ? state.host?.mic !== false
+            : audioEnabled;
+    const hostCamera =
+        typeof videoEnabled === 'undefined'
+            ? state.host?.camera !== false
+            : videoEnabled;
+    let hostTile = grid.querySelector(
+        '[data-role="host"]'
+    );
+
+    if (!hostTile) {
+        hostTile = document.createElement('article');
+        hostTile.className =
+            'dj-party-tile dj-party-host';
+        hostTile.dataset.role = 'host';
+
+        const hostVideo = document.createElement('video');
+        hostVideo.className = 'dj-party-video';
+        hostVideo.autoplay = true;
+        hostVideo.playsInline = true;
+        hostVideo.muted = true;
+        hostVideo.defaultMuted = true;
+        hostVideo.hidden = true;
+
+        const hostPlaceholder =
+            document.createElement('div');
+        hostPlaceholder.className =
+            'dj-party-placeholder';
+        hostPlaceholder.textContent = 'DJ';
+
+        const hostMeta = document.createElement('div');
+        hostMeta.className = 'dj-party-meta';
+        const hostName = document.createElement('strong');
+        hostName.textContent = 'DJCIOKOSTUDIO · Gazdă';
+        const hostDevices = document.createElement('span');
+        hostDevices.className = 'dj-party-state';
+        hostMeta.append(hostName, hostDevices);
+        hostTile.append(
+            hostVideo,
+            hostPlaceholder,
+            hostMeta
+        );
+    }
+
+    const hostVideo = hostTile.querySelector(
+        '.dj-party-video'
+    );
+    const hostPlaceholder = hostTile.querySelector(
+        '.dj-party-placeholder'
+    );
+    const hostDevices = hostTile.querySelector(
+        '.dj-party-state'
+    );
+
+    if (broadcastStream) {
+        hostPlaceholder.hidden = true;
+        hostVideo.hidden = false;
+
+        if (hostVideo.srcObject !== broadcastStream) {
+            hostVideo.srcObject = broadcastStream;
+            hostVideo.play().catch(() => {});
+        }
+    } else {
+        hostVideo.hidden = true;
+        hostPlaceholder.hidden = false;
+    }
+
+    hostDevices.textContent =
+        `${hostMic ? '🎙️ Microfon pornit' : '🔇 Microfon oprit'} · ${hostCamera ? '📹 Cameră pornită' : '📷 Cameră oprită'}`;
+    hostTile.classList.toggle(
+        'dj-party-tile--solo',
+        guests.length === 0
+    );
+    grid.dataset.participantCount = String(
+        guests.length + 1
+    );
+    if (grid.firstElementChild !== hostTile) {
+        grid.prepend(hostTile);
+    }
+
     const visibleClientIds = new Set(
         guests.map(entry => entry.clientId)
     );
@@ -1579,6 +1668,10 @@ function renderPeerPartyHostState(state) {
     grid
         .querySelectorAll('.dj-party-tile')
         .forEach(tile => {
+            if (tile.dataset.role === 'host') {
+                return;
+            }
+
             if (
                 visibleClientIds.has(
                     tile.dataset.clientId
@@ -1602,6 +1695,8 @@ function renderPeerPartyHostState(state) {
             tile.remove();
         });
 
+    let previousTile = hostTile;
+
     guests.forEach(entry => {
         let tile = [...grid.children].find(
             child =>
@@ -1613,6 +1708,7 @@ function renderPeerPartyHostState(state) {
             tile = document.createElement('article');
             tile.className = 'dj-party-tile';
             tile.dataset.clientId = entry.clientId;
+            tile.dataset.role = 'guest';
 
             const video = document.createElement('video');
             video.className = 'dj-party-video';
@@ -1699,9 +1795,16 @@ function renderPeerPartyHostState(state) {
         );
         name.textContent = entry.name;
         devices.textContent =
-            `${entry.mic ? '🎙️' : '🔇'} ${entry.camera ? '📹' : '📷 oprită'} · ${entry.state === 'active' ? 'conectat' : 'se conectează'}`;
+            `${entry.mic ? '🎙️ Microfon pornit' : '🔇 Microfon oprit'} · ${entry.camera ? '📹 Cameră pornită' : '📷 Cameră oprită'} · ${entry.state === 'active' ? 'Conectat' : 'Se conectează'}`;
 
-        grid.appendChild(tile);
+        if (previousTile.nextElementSibling !== tile) {
+            grid.insertBefore(
+                tile,
+                previousTile.nextElementSibling
+            );
+        }
+
+        previousTile = tile;
     });
 }
 

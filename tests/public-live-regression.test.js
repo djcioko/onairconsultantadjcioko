@@ -6,7 +6,7 @@ void (async () => {
   const {test} = await import('node:test');
 
   const expectedHashes = Object.freeze({
-    'stream.js': '53dedc239ff357b444ba05dd70673476cb79dbb3badc73591513a5cb07b10f43',
+    'stream.js': '58f8d63df6fddb335e888078117e766f04610de88ece78099932577b0189c564',
     'site-viewer-presence.js': 'ea1fd7f3c73b5cad353efc5323382b106888e4387d3242f4006c1c7dcafef3d9',
   });
   const root = resolve(process.cwd());

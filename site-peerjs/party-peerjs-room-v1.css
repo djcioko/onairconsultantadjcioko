@@ -46,7 +46,8 @@
 
 .party-peerjs-request-row input,
 .party-peerjs-request-row button,
-.party-peerjs-controls button {
+.party-peerjs-controls button,
+.party-peerjs-unmute {
   min-height: 46px;
   border-radius: 12px;
   font: inherit;
@@ -93,8 +94,13 @@
 
 .party-peerjs-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.party-peerjs-grid .party-peerjs-tile:only-child {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .party-peerjs-tile {
@@ -127,6 +133,27 @@
   background: #05070d;
 }
 
+.party-peerjs-tile[data-role="host"] .party-peerjs-media video {
+  object-fit: contain;
+}
+
+.party-peerjs-unmute {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 2;
+  max-width: calc(100% - 20px);
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, .35);
+  padding: 8px 14px;
+  background: rgba(4, 8, 18, .88);
+  color: #fff;
+  font-size: clamp(.78rem, 3vw, .875rem);
+  font-weight: 800;
+  white-space: normal;
+  cursor: pointer;
+}
+
 .party-peerjs-media [data-party-fallback] {
   position: absolute;
   inset: 0;
@@ -152,9 +179,16 @@
   font-size: .88rem;
 }
 
+.party-peerjs-tile[data-role="host"] .party-peerjs-meta strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .party-peerjs-meta > div {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 5px;
 }
 
@@ -163,7 +197,7 @@
   padding: 4px 7px;
   background: rgba(255, 255, 255, .07);
   color: #d9f3ff;
-  font-size: .68rem;
+  font-size: clamp(.75rem, 2.8vw, .875rem);
   white-space: nowrap;
 }
 
@@ -188,9 +222,11 @@
 }
 
 .party-peerjs-controls button {
+  min-width: 0;
   padding-inline: 8px;
   background: rgba(255, 255, 255, .08);
-  font-size: .8rem;
+  font-size: clamp(.78rem, 3vw, .875rem);
+  overflow-wrap: anywhere;
 }
 
 .party-peerjs-controls button[aria-pressed="false"] {
@@ -203,12 +239,7 @@
 }
 
 @media (min-width: 560px) {
-  .party-peerjs-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .party-peerjs-grid .party-peerjs-tile:only-child {
-    grid-column: 1 / -1;
     width: min(100%, 620px);
     justify-self: center;
   }

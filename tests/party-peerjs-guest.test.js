@@ -253,6 +253,8 @@ async function acceptedFixture(options = {}) {
     requestId: 'request-1',
     clientId: 'client-1',
   });
+  const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
+  await hostCall.emit('stream', mediaStream());
   return value;
 }
 
@@ -486,6 +488,178 @@ describe('PeerJS party request lifecycle', () => {
 
 
 describe('PeerJS party media and mesh', () => {
+  it('keeps Hang Up visible while accepted and enables device controls as soon as local media is ready', async () => {
+    let releaseCapture;
+    const capture = new Promise(resolve => { releaseCapture = resolve; });
+    const value = await connectedFixture({
+      getUserMedia: vi.fn(() => capture),
+    });
+    await value.controller.raiseHand('Ana');
+
+    const accepting = value.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+    const controls = value.root.querySelector('[data-party-controls]');
+    const microphone = value.root.querySelector('[data-party-microphone]');
+    const camera = value.root.querySelector('[data-party-camera]');
+    const hangup = value.root.querySelector('[data-party-hangup]');
+
+    expect(value.controller.state.status).toBe('accepted');
+    expect(controls.hidden).toBe(false);
+    expect(hangup.hidden).toBe(false);
+    expect(microphone.disabled).toBe(true);
+    expect(camera.disabled).toBe(true);
+
+    releaseCapture(value.stream);
+    await accepting;
+
+    expect(value.controller.state.status).toBe('joining');
+    expect(controls.hidden).toBe(false);
+    expect(microphone.disabled).toBe(false);
+    expect(camera.disabled).toBe(false);
+
+    await value.controller.setMicrophoneEnabled(false);
+    await value.controller.setCameraEnabled(false);
+    expect(value.stream.audio.enabled).toBe(false);
+    expect(value.stream.video.enabled).toBe(false);
+
+    hangup.click();
+    await vi.waitFor(() => expect(value.controller.state.status).toBe('idle'));
+    expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds host stream waits to three attempts, then stops capture and restores public audio', async () => {
+    const value = await connectedFixture();
+    value.publicLivePlayer.muted = false;
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+
+    expect(value.controller.state.status).toBe('joining');
+    expect(value.publicLivePlayer.muted).toBe(true);
+    expect(value.timers.delays).toEqual([12_000]);
+
+    await value.timers.runNext();
+    expect(value.timers.delays).toEqual([1_500]);
+    await value.timers.runNext();
+    expect(value.peer.calls.filter(call => call.metadata.type === 'guest-chat')).toHaveLength(2);
+    expect(value.timers.delays).toEqual([12_000]);
+
+    await value.timers.runNext();
+    expect(value.timers.delays).toEqual([1_500]);
+    await value.timers.runNext();
+    expect(value.peer.calls.filter(call => call.metadata.type === 'guest-chat')).toHaveLength(3);
+    expect(value.timers.delays).toEqual([12_000]);
+
+    await value.timers.runNext();
+    await vi.waitFor(() => expect(value.controller.state.status).toBe('error'));
+
+    expect(value.controller.state.requestId).toBeNull();
+    expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
+    expect(value.publicLivePlayer.muted).toBe(false);
+    expect(value.timers.delays).toEqual([]);
+  });
+
+  it('deduplicates early host call close and error events while retrying, then cleans up', async () => {
+    const value = await connectedFixture();
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+    const hostCalls = () => value.peer.calls.filter(call => call.metadata.type === 'guest-chat');
+
+    await hostCalls()[0].emit('close');
+    await hostCalls()[0].emit('error', new Error('duplicate terminal event'));
+    expect(value.timers.delays).toEqual([1_500]);
+    await value.timers.runNext();
+
+    await hostCalls()[1].emit('error', new Error('signalling failed'));
+    expect(value.timers.delays).toEqual([1_500]);
+    await value.timers.runNext();
+
+    await hostCalls()[2].emit('close');
+    await vi.waitFor(() => expect(value.controller.state.status).toBe('error'));
+
+    expect(hostCalls()).toHaveLength(3);
+    expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
+    expect(value.publicLivePlayer.muted).toBe(false);
+    expect(value.timers.delays).toEqual([]);
+  });
+
+  it('does not let repeated host reconnect messages bypass the three-attempt media limit', async () => {
+    const value = await connectedFixture();
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+
+    await value.host().emit('data', {type: 'guest-reconnect', requestId: 'request-1'});
+    await value.host().emit('data', {type: 'guest-reconnect', requestId: 'request-1'});
+    await value.host().emit('data', {type: 'guest-reconnect', requestId: 'request-1'});
+    await vi.waitFor(() => expect(value.controller.state.status).toBe('error'));
+
+    expect(value.peer.calls.filter(call => call.metadata.type === 'guest-chat')).toHaveLength(3);
+    expect(value.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(value.stream.video.stop).toHaveBeenCalledTimes(1);
+    expect(value.timers.delays).toEqual([]);
+  });
+
+  it('keeps the highlighted host tile first and labels it clearly', async () => {
+    const value = await connectedFixture();
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted',
+      requestId: 'request-1',
+      clientId: 'client-1',
+    });
+
+    const grid = value.root.querySelector('[data-party-grid]');
+    const hostTile = value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"]');
+    expect(grid.firstElementChild).toBe(hostTile);
+    expect(hostTile.dataset.role).toBe('host');
+    expect(hostTile.querySelector('[data-party-display-name]').textContent)
+      .toBe('DJCIOKOSTUDIO · Gazdă');
+  });
+
+  it('joins only after the host stream arrives and offers a mobile-safe sound control', async () => {
+    const value = await connectedFixture();
+    await value.controller.raiseHand('Ana');
+    await value.host().emit('data', {
+      type: 'guest-accepted',
+      requestId: 'request-1',
+      clientId: 'client-1',
+    });
+
+    const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
+    const hostTile = value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"]');
+    const hostVideo = hostTile.querySelector('video');
+
+    expect(value.controller.state.status).toBe('joining');
+    expect(hostVideo.srcObject ?? null).toBeNull();
+
+    const hostStream = mediaStream();
+    await hostCall.emit('stream', hostStream);
+
+    const soundButton = hostTile.querySelector('[data-party-unmute]');
+    expect(value.controller.state.status).toBe('joined');
+    expect(hostVideo.srcObject).toBe(hostStream);
+    expect(hostVideo.hidden).toBe(false);
+    expect(hostVideo.muted).toBe(true);
+    expect(soundButton.hidden).toBe(false);
+    expect(soundButton.textContent.trim()).toBe('Pornește sunetul');
+    expect(value.timers.delays).not.toContain(12_000);
+    expect(value.root.querySelector('[data-party-peer="guest-b"] video').muted).toBe(true);
+
+    soundButton.click();
+    await vi.waitFor(() => expect(hostVideo.muted).toBe(false));
+    expect(soundButton.hidden).toBe(true);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  });
+
   it('uses only the party tile for host audio from acceptance until leave', async () => {
     let releaseCapture;
     const capture = new Promise(resolve => { releaseCapture = resolve; });
@@ -508,6 +682,8 @@ describe('PeerJS party media and mesh', () => {
 
     releaseCapture(value.stream);
     await accepting;
+    const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
+    await hostCall.emit('stream', mediaStream());
     expect(value.controller.state.status).toBe('joined');
     expect(value.publicLivePlayer.muted).toBe(true);
 
@@ -515,10 +691,11 @@ describe('PeerJS party media and mesh', () => {
     value.publicLivePlayer.dispatchEvent(new Event('volumechange'));
     expect(value.publicLivePlayer.muted).toBe(true);
 
-    const hostCall = value.peer.calls.find(call => call.metadata.type === 'guest-chat');
-    await hostCall.emit('stream', mediaStream());
-    expect(value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"] video').muted)
-      .toBe(false);
+    const hostVideo = value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"] video');
+    expect(hostVideo.muted).toBe(true);
+    value.root.querySelector('[data-party-peer="djcioko-studio-unic-id"] [data-party-unmute]')
+      .click();
+    await vi.waitFor(() => expect(hostVideo.muted).toBe(false));
 
     await value.controller.leave();
     expect(value.publicLivePlayer.muted).toBe(false);
@@ -624,6 +801,8 @@ describe('PeerJS party media and mesh', () => {
     expect(value.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
     expect(value.stream.video.stop).not.toHaveBeenCalled();
     expect(value.stream.audio.stop).not.toHaveBeenCalled();
+    expect(value.controller.state.status).toBe('joining');
+    await hostCalls[1].emit('stream', mediaStream());
     expect(value.controller.state.status).toBe('joined');
   });
 
@@ -728,6 +907,57 @@ describe('PeerJS party media and mesh', () => {
       );
     },
   );
+
+  it('stops accepted capture and joining calls when the host expires the request', async () => {
+    let releaseCapture;
+    const capture = new Promise(resolve => { releaseCapture = resolve; });
+    const accepted = await connectedFixture({
+      getUserMedia: vi.fn(() => capture),
+    });
+    accepted.publicLivePlayer.muted = false;
+    await accepted.controller.raiseHand('Ana');
+    const accepting = accepted.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+    expect(accepted.controller.state.status).toBe('accepted');
+    expect(accepted.publicLivePlayer.muted).toBe(true);
+
+    await accepted.host().emit('data', {
+      type: 'guest-expired', requestId: 'request-1', clientId: 'client-1',
+    });
+    expect(accepted.controller.state.status).toBe('expired');
+    expect(accepted.publicLivePlayer.muted).toBe(false);
+
+    releaseCapture(accepted.stream);
+    await accepting;
+    expect(accepted.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(accepted.stream.video.stop).toHaveBeenCalledTimes(1);
+    expect(accepted.peer.calls.filter(call => call.metadata.type === 'guest-chat'))
+      .toHaveLength(0);
+
+    await accepted.controller.destroy();
+    document.body.textContent = '';
+
+    const joining = await connectedFixture();
+    joining.publicLivePlayer.muted = false;
+    await joining.controller.raiseHand('Ana');
+    await joining.host().emit('data', {
+      type: 'guest-accepted', requestId: 'request-1', clientId: 'client-1',
+    });
+    const hostCall = joining.peer.calls.find(call => call.metadata.type === 'guest-chat');
+    expect(joining.controller.state.status).toBe('joining');
+    expect(joining.publicLivePlayer.muted).toBe(true);
+
+    await joining.host().emit('data', {
+      type: 'guest-expired', requestId: 'request-1', clientId: 'client-1',
+    });
+    expect(joining.controller.state.status).toBe('expired');
+    expect(joining.controller.state.requestId).toBeNull();
+    expect(joining.stream.audio.stop).toHaveBeenCalledTimes(1);
+    expect(joining.stream.video.stop).toHaveBeenCalledTimes(1);
+    expect(hostCall.close).toHaveBeenCalledTimes(1);
+    expect(joining.publicLivePlayer.muted).toBe(false);
+  });
 
   it('restores public audio after a media permission error', async () => {
     const value = await connectedFixture({
